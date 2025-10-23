@@ -1,0 +1,109 @@
+# GitHub Actions workflow for building and deploying Discord bot to Azure Web App
+# Docs: https://github.com/Azure/webapps-deploy
+
+name: Build and deploy Node.js app to Azure Web App - tsabothostinstance
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Optional: Uncomment to run type checking before deployment
+      # - name: Type check
+      #   run: npm run type-check
+
+      # Optional: Uncomment to run linting before deployment
+      # - name: Lint code
+      #   run: npm run lint
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Create logs directory
+        run: mkdir -p logs
+
+      - name: Prepare deployment package
+        run: |
+          # Create a clean directory for deployment
+          mkdir -p deploy-package
+
+          # Copy production files
+          cp -r dist deploy-package/
+          cp -r node_modules deploy-package/
+          cp -r scripts deploy-package/
+          cp -r logs deploy-package/
+          cp package.json deploy-package/
+          cp package-lock.json deploy-package/
+
+          # Copy web.config if it exists (for Azure Web App Node.js configuration)
+          if [ -f web.config ]; then
+            cp web.config deploy-package/
+          fi
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-app
+          path: deploy-package/
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: node-app
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'tsabothostinstance'
+          slot-name: 'Production'
+          package: .
+
+      # Optional: Uncomment to verify deployment with a health check
+      # - name: Health check
+      #   run: |
+      #     sleep 30
+      #     curl -f ${{ steps.deploy-to-webapp.outputs.webapp-url }}/health || echo "Health check endpoint not available"
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
