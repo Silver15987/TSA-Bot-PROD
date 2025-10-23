@@ -27,6 +27,9 @@ class RedisClient {
         password: config.redis.password,
         tls: config.redis.tls ? {
           servername: config.redis.host,
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.3',
+          rejectUnauthorized: true,
         } : undefined,
         connectTimeout: 30000,
         keepAlive: 30000,
