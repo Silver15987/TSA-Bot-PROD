@@ -1,0 +1,181 @@
+import { MongoClient, Db, Collection } from 'mongodb';
+import { config } from '../core/config';
+import logger from '../core/logger';
+import {
+  UserDocument,
+  FactionDocument,
+  QuestDocument,
+  QuestCooldownDocument,
+  WarDocument,
+  TransactionDocument,
+  ServerConfigDocument,
+} from '../types/database';
+
+/**
+ * MongoDB Client Manager
+ */
+class DatabaseClient {
+  private client: MongoClient | null = null;
+  private db: Db | null = null;
+  private isConnected = false;
+
+  /**
+   * Connect to MongoDB
+   */
+  async connect(): Promise<void> {
+    if (this.isConnected) {
+      logger.warn('Database already connected');
+      return;
+    }
+
+    try {
+      logger.info('Connecting to Cosmos DB...');
+      this.client = new MongoClient(config.database.uri, {
+        retryWrites: false,
+        retryReads: true,
+        maxPoolSize: 10,
+        minPoolSize: 2,
+      });
+
+      await this.client.connect();
+      this.db = this.client.db(config.database.name);
+      this.isConnected = true;
+
+      logger.info('Successfully connected to Cosmos DB');
+
+      // Create indexes
+      await this.createIndexes();
+    } catch (error) {
+      logger.error('Failed to connect to Cosmos DB:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Disconnect from MongoDB
+   */
+  async disconnect(): Promise<void> {
+    if (!this.isConnected || !this.client) {
+      return;
+    }
+
+    try {
+      await this.client.close();
+      this.isConnected = false;
+      logger.info('Disconnected from Cosmos DB');
+    } catch (error) {
+      logger.error('Error disconnecting from Cosmos DB:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get database instance
+   */
+  getDb(): Db {
+    if (!this.db) {
+      throw new Error('Database not connected. Call connect() first.');
+    }
+    return this.db;
+  }
+
+  /**
+   * Get collection with type safety
+   */
+  getCollection<T extends Document>(name: string): Collection<T> {
+    return this.getDb().collection<T>(name);
+  }
+
+  /**
+   * Collection accessors
+   */
+  get users(): Collection<UserDocument> {
+    return this.getCollection<UserDocument>('users');
+  }
+
+  get factions(): Collection<FactionDocument> {
+    return this.getCollection<FactionDocument>('factions');
+  }
+
+  get quests(): Collection<QuestDocument> {
+    return this.getCollection<QuestDocument>('quests');
+  }
+
+  get questCooldowns(): Collection<QuestCooldownDocument> {
+    return this.getCollection<QuestCooldownDocument>('questCooldowns');
+  }
+
+  get wars(): Collection<WarDocument> {
+    return this.getCollection<WarDocument>('wars');
+  }
+
+  get transactions(): Collection<TransactionDocument> {
+    return this.getCollection<TransactionDocument>('transactions');
+  }
+
+  get serverConfigs(): Collection<ServerConfigDocument> {
+    return this.getCollection<ServerConfigDocument>('serverConfigs');
+  }
+
+  /**
+   * Create database indexes for performance
+   */
+  private async createIndexes(): Promise<void> {
+    logger.info('Creating database indexes...');
+
+    try {
+      // Users indexes
+      await this.users.createIndex({ id: 1 }, { unique: true });
+      await this.users.createIndex({ guildId: 1 });
+      await this.users.createIndex({ currentFaction: 1 });
+      await this.users.createIndex({ lastActiveDate: 1 });
+      await this.users.createIndex({ totalCoinsEarned: -1 });
+      await this.users.createIndex({ dailyCoinsEarned: -1 });
+
+      // Factions indexes
+      await this.factions.createIndex({ id: 1 }, { unique: true });
+      await this.factions.createIndex({ guildId: 1 });
+      await this.factions.createIndex({ name: 1, guildId: 1 }, { unique: true });
+      await this.factions.createIndex({ treasury: -1 });
+      await this.factions.createIndex({ nextUpkeepDate: 1 });
+
+      // Quests indexes
+      await this.quests.createIndex({ factionId: 1, status: 1 });
+      await this.quests.createIndex({ status: 1, questDeadline: 1 });
+      await this.quests.createIndex({ guildId: 1, isTemplate: 1 });
+      await this.quests.createIndex({ guildId: 1, status: 1 });
+      await this.quests.createIndex({ factionId: 1, completedAt: -1 }); // For quest history sorting
+
+      // Quest Cooldowns indexes
+      await this.questCooldowns.createIndex({ factionId: 1 }, { unique: true });
+      await this.questCooldowns.createIndex({ cooldownEndsAt: 1 });
+
+      // Wars indexes
+      await this.wars.createIndex({ guildId: 1, status: 1 });
+      await this.wars.createIndex({ status: 1, endsAt: 1 });
+
+      // Transactions indexes
+      await this.transactions.createIndex({ userId: 1, createdAt: -1 });
+      await this.transactions.createIndex({ type: 1 });
+      await this.transactions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 31536000 }); // TTL: 1 year
+
+      // ServerConfigs indexes
+      await this.serverConfigs.createIndex({ guildId: 1 }, { unique: true });
+
+      logger.info('Database indexes created successfully');
+    } catch (error) {
+      logger.error('Error creating indexes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if database is connected
+   */
+  isReady(): boolean {
+    return this.isConnected;
+  }
+}
+
+// Export singleton instance
+export const database = new DatabaseClient();
