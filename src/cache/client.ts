@@ -24,25 +24,29 @@ class RedisClient {
       this.client = new Redis({
         host: config.redis.host,
         port: config.redis.port,
-        username: config.redis.username,
         password: config.redis.password,
         tls: config.redis.tls ? {
           servername: config.redis.host,
-          rejectUnauthorized: false,
         } : undefined,
-        connectTimeout: 10000,
+        connectTimeout: 30000,
+        keepAlive: 30000,
+        maxRetriesPerRequest: null,
         retryStrategy: (times) => {
-          if (times > 5) {
-            logger.error('Redis connection failed after 5 attempts');
+          if (times > 10) {
+            logger.error('Redis connection failed after 10 attempts');
             return null; // Stop retrying
           }
-          const delay = Math.min(times * 50, 2000);
+          const delay = Math.min(times * 100, 3000);
           logger.warn(`Redis connection retry attempt ${times}, delay: ${delay}ms`);
           return delay;
         },
-        maxRetriesPerRequest: 3,
         enableReadyCheck: true,
         lazyConnect: false,
+        enableOfflineQueue: true,
+        reconnectOnError: (err) => {
+          const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
+          return targetErrors.some(targetError => err.message.includes(targetError));
+        },
       });
 
       // Event listeners
