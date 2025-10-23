@@ -96,7 +96,7 @@ export class QuestValidators {
   async validateQuestAcceptance(
     quest: QuestDocument,
     factionId: string,
-    guildId: string
+    _guildId: string
   ): Promise<QuestValidationResult> {
     // Check quest status
     if (quest.status !== 'offered') {

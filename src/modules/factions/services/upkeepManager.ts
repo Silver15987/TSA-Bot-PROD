@@ -1,4 +1,4 @@
-import { Client, Guild } from 'discord.js';
+import { Client } from 'discord.js';
 import { database } from '../../../database/client';
 import { factionManager } from './factionManager';
 import { disbandManager } from './disbandManager';

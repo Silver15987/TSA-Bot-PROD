@@ -14,7 +14,7 @@ export class FactionAdminService {
     factionId: string,
     guildId: string,
     amount: number,
-    staffUserId: string
+    _staffUserId: string
   ): Promise<FactionEconomyAdminResult> {
     try {
       // Validate amount
@@ -103,7 +103,7 @@ export class FactionAdminService {
     factionId: string,
     guildId: string,
     amount: number,
-    staffUserId: string
+    _staffUserId: string
   ): Promise<FactionEconomyAdminResult> {
     try {
       // Validate amount

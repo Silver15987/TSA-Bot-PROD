@@ -143,7 +143,7 @@ export class QuestRewardService {
       if (!user) {
         logger.warn(`User ${userId} not found, creating user document`);
         // Create minimal user document
-        user = {
+        const newUser = {
           id: userId,
           guildId,
           username: 'Unknown',
@@ -173,7 +173,13 @@ export class QuestRewardService {
           updatedAt: new Date(),
         };
 
-        await database.users.insertOne(user);
+        await database.users.insertOne(newUser);
+
+        // Fetch the inserted user to get the full document with _id
+        user = await database.users.findOne({ id: userId, guildId });
+        if (!user) {
+          throw new Error(`Failed to create user ${userId}`);
+        }
       } else {
         // Update existing user
         await database.users.updateOne(
@@ -193,6 +199,9 @@ export class QuestRewardService {
       }
 
       // Create transaction record
+      if (!user) {
+        throw new Error(`User ${userId} not found after update`);
+      }
       const newBalance = (user.coins || 0) + amount;
       await database.transactions.insertOne({
         id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,

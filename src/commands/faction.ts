@@ -742,7 +742,7 @@ async function handleInvite(interaction: ChatInputCommandInteraction): Promise<v
       }
     });
 
-    collector.on('end', async (collected, reason) => {
+    collector.on('end', async (_collected, reason) => {
       if (reason === 'time') {
         // Invite expired
         await interaction.editReply({
@@ -1215,7 +1215,7 @@ async function handleDisband(interaction: ChatInputCommandInteraction): Promise<
       }
     });
 
-    collector.on('end', async (collected, reason) => {
+    collector.on('end', async (_collected, reason) => {
       if (reason === 'time') {
         // Confirmation expired
         await interaction.editReply({

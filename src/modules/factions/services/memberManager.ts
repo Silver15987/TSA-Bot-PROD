@@ -1,4 +1,4 @@
-import { Guild, GuildMember } from 'discord.js';
+import { Guild } from 'discord.js';
 import { database } from '../../../database/client';
 import { factionManager } from './factionManager';
 import { memberHistoryManager } from './memberHistoryManager';
@@ -194,7 +194,7 @@ export class MemberManager {
       }
 
       // Officers can only kick regular members, not other officers or owner
-      if (faction.officers.includes(kickerId) && !faction.ownerId === kickerId) {
+      if (faction.officers.includes(kickerId) && faction.ownerId !== kickerId) {
         if (faction.officers.includes(targetUserId)) {
           return {
             success: false,

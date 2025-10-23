@@ -1,5 +1,4 @@
 import { database } from '../../../database/client';
-import { QuestDocument } from '../../../types/database';
 import { questManager } from './questManager';
 import { questValidators } from './questValidators';
 import logger from '../../../core/logger';

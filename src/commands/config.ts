@@ -140,7 +140,7 @@ async function handleSetFactionCategory(
     }
 
     // Update the configuration in the database
-    const result = await database.serverConfigs.updateOne(
+    await database.serverConfigs.updateOne(
       { guildId },
       {
         $set: {

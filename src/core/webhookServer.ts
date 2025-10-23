@@ -23,21 +23,23 @@ export class WebhookServer {
    * Setup webhook routes
    */
   private setupRoutes(): void {
-    this.app.get('/health', (req: Request, res: Response) => {
+    this.app.get('/health', (_req: Request, res: Response) => {
       res.json({ status: 'ok', uptime: process.uptime() });
     });
 
-    this.app.post('/api/config-updated', async (req: Request, res: Response) => {
+    this.app.post('/api/config-updated', async (req: Request, res: Response): Promise<void> => {
       try {
         const { guildId, secret } = req.body;
 
         if (!guildId) {
-          return res.status(400).json({ error: 'Missing guildId' });
+          res.status(400).json({ error: 'Missing guildId' });
+          return;
         }
 
         if (secret !== WEBHOOK_SECRET) {
           logger.warn(`Unauthorized config update attempt for guild ${guildId}`);
-          return res.status(401).json({ error: 'Unauthorized' });
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
         }
 
         logger.info(`Received config update webhook for guild ${guildId}`);

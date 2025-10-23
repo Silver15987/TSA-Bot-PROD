@@ -202,7 +202,7 @@ export class FactionValidator {
   /**
    * Validate treasury amount
    */
-  validateTreasuryAmount(amount: number, operation: 'deposit' | 'withdraw'): ValidationResult {
+  validateTreasuryAmount(amount: number, _operation: 'deposit' | 'withdraw'): ValidationResult {
     if (amount <= 0) {
       return {
         valid: false,

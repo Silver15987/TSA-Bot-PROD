@@ -6,7 +6,6 @@
  * User Document Schema
  */
 export interface UserDocument {
-  _id?: string;
   id: string; // Discord user ID
   guildId: string; // Discord server ID
   username: string;
@@ -68,7 +67,6 @@ export interface UserDocument {
  * Faction Document Schema
  */
 export interface FactionDocument {
-  _id?: string;
   id: string; // Unique faction ID
   guildId: string; // Discord server ID
   name: string; // Faction name (unique per server)
@@ -130,7 +128,6 @@ export interface FactionDocument {
  * Quest Document Schema
  */
 export interface QuestDocument {
-  _id?: string;
   id: string;
   factionId: string | null; // null if template
   guildId: string;
@@ -191,7 +188,6 @@ export interface QuestDocument {
  * Quest Cooldown Document Schema
  */
 export interface QuestCooldownDocument {
-  _id?: string;
   factionId: string;
   guildId: string;
   cooldownEndsAt: Date; // When faction can receive next quest
@@ -205,7 +201,6 @@ export interface QuestCooldownDocument {
  * War Document Schema
  */
 export interface WarDocument {
-  _id?: string;
   id: string;
   guildId: string;
 
@@ -246,7 +241,6 @@ export interface WarDocument {
  * Transaction Document Schema
  */
 export interface TransactionDocument {
-  _id?: string;
   id: string;
   userId: string;
 
@@ -265,7 +259,6 @@ export interface TransactionDocument {
  * Server Configuration Document Schema
  */
 export interface ServerConfigDocument {
-  _id?: string;
   guildId: string;
 
   // VC Tracking Configuration

@@ -10,7 +10,6 @@ import { questCooldownManager } from '../modules/quests/services/questCooldownMa
 import { factionManager } from '../modules/factions/services/factionManager';
 import { QuestTemplateData } from '../modules/quests/types';
 import { formatQuestType, formatQuestGoal, formatBonusEffect } from '../modules/quests/utils/questFormatters';
-import { getDifficultyEmoji } from '../modules/quests/utils/difficultyScaler';
 import logger from '../core/logger';
 
 export default {

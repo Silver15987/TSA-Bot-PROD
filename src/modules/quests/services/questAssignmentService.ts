@@ -95,8 +95,8 @@ export class QuestAssignmentService {
 
       const questId = this.generateQuestId();
 
-      // Exclude _id from template to avoid duplicate key error
-      const { _id, ...templateData } = randomTemplate;
+      // Exclude _id from template to avoid duplicate key error (MongoDB adds _id automatically)
+      const { _id: _omittedId, ...templateData } = randomTemplate as any;
 
       const questDoc: QuestDocument = {
         ...templateData,
@@ -212,8 +212,8 @@ export class QuestAssignmentService {
 
       const questId = this.generateQuestId();
 
-      // Exclude _id from template to avoid duplicate key error
-      const { _id, ...templateData } = template;
+      // Exclude _id from template to avoid duplicate key error (MongoDB adds _id automatically)
+      const { _id: _omittedId2, ...templateData } = template as any;
 
       const questDoc: QuestDocument = {
         ...templateData,
@@ -268,7 +268,7 @@ export class QuestAssignmentService {
     client: Client,
     faction: FactionDocument,
     quest: QuestDocument,
-    guildId: string
+    _guildId: string
   ): Promise<void> {
     try {
       const channel = await client.channels.fetch(faction.channelId);

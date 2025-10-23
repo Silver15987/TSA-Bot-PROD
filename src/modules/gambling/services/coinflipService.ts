@@ -131,7 +131,7 @@ export class CoinflipService {
     guildId: string,
     won: boolean,
     betAmount: number,
-    winnings: number,
+    _winnings: number,
     newBalance: number
   ): Promise<void> {
     const updateFields: any = {

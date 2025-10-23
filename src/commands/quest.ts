@@ -2,14 +2,10 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
 } from 'discord.js';
 import { questManager } from '../modules/quests/services/questManager';
 import { questValidators } from '../modules/quests/services/questValidators';
 import { factionManager } from '../modules/factions/services/factionManager';
-import { configManager } from '../core/configManager';
 import {
   formatQuestType,
   formatQuestGoal,
@@ -263,7 +259,6 @@ async function handleAccept(
   }
 
   // Accept the quest
-  const config = configManager.getConfig(guildId);
   const now = new Date();
   const questDeadline = new Date(now.getTime() + quest.durationHours * 60 * 60 * 1000);
 

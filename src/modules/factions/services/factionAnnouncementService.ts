@@ -1,4 +1,4 @@
-import { Client, TextChannel, NewsChannel, VoiceChannel, EmbedBuilder, Guild } from 'discord.js';
+import { Client, TextChannel, NewsChannel, VoiceChannel, EmbedBuilder } from 'discord.js';
 import { configManager } from '../../../core/configManager';
 import logger from '../../../core/logger';
 

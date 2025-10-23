@@ -16,11 +16,15 @@ class ConfigManager {
    */
   async loadConfig(guildId: string): Promise<ServerConfigDocument> {
     try {
-      let serverConfig = await database.serverConfigs.findOne({ guildId });
+      const serverConfig = await database.serverConfigs.findOne({ guildId });
 
       if (!serverConfig) {
         logger.info(`No config found for guild ${guildId}, creating default config`);
-        serverConfig = await this.createDefaultConfig(guildId);
+        const newConfig = await this.createDefaultConfig(guildId);
+        this.configCache.set(guildId, newConfig);
+        this.loadTimestamps.set(guildId, new Date());
+        logger.info(`Loaded config for guild ${guildId} (version ${newConfig.version})`);
+        return newConfig;
       }
 
       this.configCache.set(guildId, serverConfig);
@@ -91,7 +95,7 @@ class ConfigManager {
    * Create default configuration for a new guild
    */
   private async createDefaultConfig(guildId: string): Promise<ServerConfigDocument> {
-    const defaultConfig: ServerConfigDocument = {
+    const defaultConfig = {
       guildId,
 
       vcTracking: {
@@ -176,7 +180,13 @@ class ConfigManager {
     await database.serverConfigs.insertOne(defaultConfig);
     logger.info(`Created default config for guild ${guildId}`);
 
-    return defaultConfig;
+    // Fetch the inserted document to get the full WithId type
+    const insertedConfig = await database.serverConfigs.findOne({ guildId });
+    if (!insertedConfig) {
+      throw new Error(`Failed to retrieve inserted config for guild ${guildId}`);
+    }
+
+    return insertedConfig;
   }
 
   /**
