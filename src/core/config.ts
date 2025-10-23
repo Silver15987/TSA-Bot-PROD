@@ -8,6 +8,24 @@ dotenv.config();
  * Validate required environment variables
  */
 function validateEnv(): void {
+  // DIAGNOSTIC LOGGING - Will appear in Azure Log Stream
+  console.log('\n=== ENVIRONMENT VARIABLE DIAGNOSTIC ===');
+  console.log('Current working directory:', process.cwd());
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('Total env variables count:', Object.keys(process.env).length);
+  console.log('All environment variable keys:', Object.keys(process.env).sort());
+
+  // Check each required variable individually
+  console.log('\n--- Required Variables Check ---');
+  console.log('DISCORD_BOT_TOKEN:', process.env.DISCORD_BOT_TOKEN ? 'EXISTS (length: ' + process.env.DISCORD_BOT_TOKEN.length + ')' : 'MISSING');
+  console.log('DISCORD_CLIENT_ID:', process.env.DISCORD_CLIENT_ID ? 'EXISTS' : 'MISSING');
+  console.log('COSMOS_DB_URI:', process.env.COSMOS_DB_URI ? 'EXISTS (length: ' + process.env.COSMOS_DB_URI.length + ')' : 'MISSING');
+  console.log('COSMOS_DB_NAME:', process.env.COSMOS_DB_NAME ? 'EXISTS' : 'MISSING');
+  console.log('REDIS_HOST:', process.env.REDIS_HOST ? 'EXISTS' : 'MISSING');
+  console.log('REDIS_PORT:', process.env.REDIS_PORT ? 'EXISTS' : 'MISSING');
+  console.log('REDIS_PASSWORD:', process.env.REDIS_PASSWORD ? 'EXISTS (length: ' + process.env.REDIS_PASSWORD.length + ')' : 'MISSING');
+  console.log('======================================\n');
+
   const required = [
     'DISCORD_BOT_TOKEN',
     'DISCORD_CLIENT_ID',
