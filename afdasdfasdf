@@ -1,0 +1,10 @@
+[33me5392ca[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Implement environment-based Redis authentication with Azure Managed Identity support
+[33m856766a[m Fix Azure Redis Cache authentication and TLS configuration
+[33m2137f22[m Fix Azure Redis Cache connection with keep-alive and improved resilience
+[33m436be35[m Add diagnostic logging for Azure environment variable debugging
+[33ma245a00[m Fix Azure federated credential authentication by removing environment
+[33m5f71fca[m cleaning up old deploy service
+[33m8eff0bf[m Fix all TypeScript compilation errors for CI/CD deployment
+[33m3cfc4fa[m Added CI/CD to azure
+[33m9d244ce[m Add or update the Azure App Service build and deployment workflow config
+[33m83b2cd9[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m initial commit
