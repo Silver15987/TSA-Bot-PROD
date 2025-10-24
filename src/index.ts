@@ -31,20 +31,26 @@ async function main() {
     logger.info('Loading commands...');
     const commandsPath = join(__dirname, 'commands');
     const commandFiles = readdirSync(commandsPath).filter((file) =>
-      file.endsWith('.js') || file.endsWith('.ts')
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
     );
 
     const commands = [];
     for (const file of commandFiles) {
       const filePath = join(commandsPath, file);
-      const command = require(filePath).default;
+      try {
+        logger.info(`Loading command file: ${file}`);
+        const command = require(filePath).default;
 
-      if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-        commands.push(command.data.toJSON());
-        logger.info(`Loaded command: ${command.data.name}`);
-      } else {
-        logger.warn(`Skipping invalid command file: ${file}`);
+        if ('data' in command && 'execute' in command) {
+          client.commands.set(command.data.name, command);
+          commands.push(command.data.toJSON());
+          logger.info(`Loaded command: ${command.data.name}`);
+        } else {
+          logger.warn(`Skipping invalid command file: ${file}`);
+        }
+      } catch (error) {
+        logger.error(`Failed to load command file: ${file}`, error);
+        throw error; // Re-throw to see the full error
       }
     }
 
@@ -52,7 +58,7 @@ async function main() {
     logger.info('Loading events...');
     const eventsPath = join(__dirname, 'events');
     const eventFiles = readdirSync(eventsPath).filter((file) =>
-      file.endsWith('.js') || file.endsWith('.ts')
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
     );
 
     for (const file of eventFiles) {
