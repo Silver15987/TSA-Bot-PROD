@@ -307,6 +307,7 @@ export interface ServerConfigDocument {
   admin: {
     staffRoleIds: string[]; // Roles that can use admin commands
     auditLogChannelId: string; // Channel for audit logs
+    betaRoleIds?: string[]; // Roles that can use bot during beta testing
   };
 
   // Quest Configuration

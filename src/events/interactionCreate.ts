@@ -1,6 +1,7 @@
-import { Events, Interaction } from 'discord.js';
+import { Events, Interaction, PermissionFlagsBits } from 'discord.js';
 import logger from '../core/logger';
 import { BotClient } from '../core/client';
+import { permissionService } from '../modules/admin/services/permissionService';
 
 export default {
   name: Events.InteractionCreate,
@@ -13,6 +14,35 @@ export default {
       if (!command) {
         logger.warn(`No command found for: ${interaction.commandName}`);
         return;
+      }
+
+      // Check beta permissions (unless it's a config command or user is admin)
+      if (interaction.guildId && interaction.guild && interaction.member) {
+        const member = interaction.member;
+        const guildId = interaction.guildId;
+
+        // Skip beta check for config command (admins need to set up beta roles)
+        // Also skip for admins (they bypass beta restrictions)
+        const isAdmin = member.permissions &&
+          (typeof member.permissions === 'string'
+            ? BigInt(member.permissions) & BigInt(PermissionFlagsBits.Administrator)
+            : member.permissions.has(PermissionFlagsBits.Administrator));
+
+        if (!isAdmin && interaction.commandName !== 'config') {
+          const betaCheck = permissionService.hasBetaPermission(
+            interaction.guild.members.cache.get(interaction.user.id)!,
+            guildId
+          );
+
+          if (!betaCheck.hasPermission) {
+            await interaction.reply({
+              content: `❌ ${betaCheck.reason}`,
+              ephemeral: true,
+            });
+            logger.info(`Beta permission denied for ${interaction.user.tag} in ${interaction.guild.name}`);
+            return;
+          }
+        }
       }
 
       try {

@@ -42,6 +42,17 @@ export default {
     )
     .addSubcommand(subcommand =>
       subcommand
+        .setName('set-beta-roles')
+        .setDescription('Set roles that can use the bot during beta testing')
+        .addStringOption(option =>
+          option
+            .setName('role_ids')
+            .setDescription('Comma-separated list of role IDs (e.g., 123,456,789) or leave empty to disable beta mode')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
         .setName('set-audit-channel')
         .setDescription('Set the channel for audit logs')
         .addStringOption(option =>
@@ -85,6 +96,9 @@ export default {
           break;
         case 'set-staff-roles':
           await handleSetStaffRoles(interaction, guildId);
+          break;
+        case 'set-beta-roles':
+          await handleSetBetaRoles(interaction, guildId);
           break;
         case 'set-audit-channel':
           await handleSetAuditChannel(interaction, guildId);
@@ -298,6 +312,99 @@ async function handleSetStaffRoles(
     logger.info(`Staff roles set for guild ${guildId} by ${interaction.user.id}: ${roleIds.join(', ')}`);
   } catch (error) {
     logger.error('Error setting staff roles:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle /config set-beta-roles
+ */
+async function handleSetBetaRoles(
+  interaction: ChatInputCommandInteraction,
+  guildId: string
+): Promise<void> {
+  const roleIdsInput = interaction.options.getString('role_ids', false);
+
+  try {
+    // If empty input, disable beta mode
+    if (!roleIdsInput || roleIdsInput.trim().length === 0) {
+      await database.serverConfigs.updateOne(
+        { guildId },
+        {
+          $unset: { 'admin.betaRoleIds': '' },
+          $set: {
+            updatedAt: new Date(),
+            updatedBy: interaction.user.id,
+          },
+          $inc: { version: 1 },
+        },
+        { upsert: true }
+      );
+
+      await configManager.reloadConfig(guildId);
+
+      await interaction.editReply({
+        content: `✅ Beta mode has been disabled!\n\n` +
+          `All users can now use bot commands without role restrictions.`,
+      });
+
+      logger.info(`Beta mode disabled for guild ${guildId} by ${interaction.user.id}`);
+      return;
+    }
+
+    // Parse role IDs
+    const roleIds = roleIdsInput.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+    if (roleIds.length === 0) {
+      await interaction.editReply({
+        content: '❌ Please provide at least one valid role ID, or leave empty to disable beta mode.',
+      });
+      return;
+    }
+
+    // Verify all role IDs exist
+    const invalidRoles: string[] = [];
+    for (const roleId of roleIds) {
+      const role = await interaction.guild?.roles.fetch(roleId).catch(() => null);
+      if (!role) {
+        invalidRoles.push(roleId);
+      }
+    }
+
+    if (invalidRoles.length > 0) {
+      await interaction.editReply({
+        content: `❌ The following role IDs are invalid: ${invalidRoles.join(', ')}\n\nPlease check the role IDs and try again.`,
+      });
+      return;
+    }
+
+    // Update the configuration in the database
+    await database.serverConfigs.updateOne(
+      { guildId },
+      {
+        $set: {
+          'admin.betaRoleIds': roleIds,
+          updatedAt: new Date(),
+          updatedBy: interaction.user.id,
+        },
+        $inc: { version: 1 },
+      },
+      { upsert: true }
+    );
+
+    // Reload the configuration
+    await configManager.reloadConfig(guildId);
+
+    await interaction.editReply({
+      content: `✅ Beta roles have been set!\n\n` +
+        `**Roles:** ${roleIds.map(id => `<@&${id}>`).join(', ')}\n\n` +
+        `⚠️ **BETA MODE ACTIVE:** Only users with these roles can use bot commands.\n` +
+        `Administrators will bypass this restriction.`,
+    });
+
+    logger.info(`Beta roles set for guild ${guildId} by ${interaction.user.id}: ${roleIds.join(', ')}`);
+  } catch (error) {
+    logger.error('Error setting beta roles:', error);
     throw error;
   }
 }
