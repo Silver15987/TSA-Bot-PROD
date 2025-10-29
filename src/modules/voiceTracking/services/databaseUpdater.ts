@@ -56,7 +56,13 @@ export class DatabaseUpdater {
         }
       }
 
-      await streakManager.updateStreak(userId, guildId);
+      // Update daily streak (wrapped to prevent crashes)
+      try {
+        await streakManager.updateStreak(userId, guildId);
+      } catch (error) {
+        logger.error(`Error updating streak for user ${userId}:`, error);
+        // Don't let streak update failure crash session save
+      }
 
       await sessionManager.deleteSession(userId, guildId);
 
@@ -65,7 +71,7 @@ export class DatabaseUpdater {
       );
     } catch (error) {
       logger.error(`Failed to save and end session for user ${userId}:`, error);
-      throw error;
+      // Don't re-throw - error is logged, let caller continue
     }
   }
 

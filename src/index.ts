@@ -13,6 +13,50 @@ import { startQuestScheduler, stopQuestScheduler } from './modules/quests/tasks/
 import logger from './core/logger';
 
 /**
+ * Global error handlers to prevent silent crashes
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Promise Rejection:', {
+    reason,
+    promise: promise.toString(),
+    stack: reason instanceof Error ? reason.stack : undefined
+  });
+  // Log but don't exit - allow process to continue
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  // Critical error - attempt graceful shutdown
+  shutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1));
+});
+
+/**
+ * Graceful shutdown handler
+ */
+async function shutdown(signal: string): Promise<void> {
+  logger.info(`${signal} received. Shutting down gracefully...`);
+
+  try {
+    syncManager.stop();
+    stopUpkeepTask();
+    stopQuestScheduler();
+    webhookServer.stop();
+
+    // Give ongoing operations time to complete
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    await database.disconnect();
+    await redis.disconnect();
+
+    logger.info('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+/**
  * Main bot initialization
  */
 async function main() {
@@ -113,24 +157,19 @@ async function main() {
       startQuestScheduler(client);
 
       logger.info('All systems initialized and ready');
+
+      // Start memory monitoring (logs every 15 minutes)
+      setInterval(() => {
+        const usage = process.memoryUsage();
+        logger.info('Memory usage:', {
+          heapUsed: `${Math.round(usage.heapUsed / 1024 / 1024)}MB`,
+          heapTotal: `${Math.round(usage.heapTotal / 1024 / 1024)}MB`,
+          rss: `${Math.round(usage.rss / 1024 / 1024)}MB`,
+        });
+      }, 15 * 60 * 1000); // 15 minutes
     });
 
-    // Graceful shutdown
-    const shutdown = async (signal: string) => {
-      logger.info(`${signal} received. Shutting down gracefully...`);
-
-      syncManager.stop();
-      stopUpkeepTask();
-      stopQuestScheduler();
-      webhookServer.stop();
-      await client.stop();
-      await database.disconnect();
-      await redis.disconnect();
-
-      logger.info('Shutdown complete');
-      process.exit(0);
-    };
-
+    // Register shutdown handlers
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
 

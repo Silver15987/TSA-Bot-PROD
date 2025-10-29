@@ -18,6 +18,12 @@ export class SessionManager {
     factionId?: string // Optional: faction ID if in faction VC
   ): Promise<void> {
     try {
+      // Check if Redis is connected
+      if (!redis.isReady()) {
+        logger.error(`Cannot create session for user ${userId}: Redis not connected`);
+        return; // Gracefully fail without throwing
+      }
+
       const now = Date.now();
       const session: VCSession = {
         userId,
@@ -37,7 +43,7 @@ export class SessionManager {
       logger.info(`Session created for user ${userId} in channel ${channelId} (guild: ${guildId}, faction: ${factionId || 'none'})`);
     } catch (error) {
       logger.error(`Failed to create session for user ${userId}:`, error);
-      throw error;
+      // Don't re-throw - error is logged, let caller continue
     }
   }
 
@@ -65,13 +71,19 @@ export class SessionManager {
    */
   async deleteSession(userId: string, guildId: string): Promise<void> {
     try {
+      // Check if Redis is connected
+      if (!redis.isReady()) {
+        logger.error(`Cannot delete session for user ${userId}: Redis not connected`);
+        return; // Gracefully fail without throwing
+      }
+
       const key = this.getSessionKey(guildId, userId);
       await redis.del(key);
 
       logger.info(`Session deleted for user ${userId} (guild: ${guildId})`);
     } catch (error) {
       logger.error(`Failed to delete session for user ${userId}:`, error);
-      throw error;
+      // Don't re-throw - error is logged, let caller continue
     }
   }
 
@@ -117,6 +129,12 @@ export class SessionManager {
     factionId?: string
   ): Promise<void> {
     try {
+      // Check if Redis is connected
+      if (!redis.isReady()) {
+        logger.error(`Cannot transfer session for user ${userId}: Redis not connected`);
+        return; // Gracefully fail without throwing
+      }
+
       const session = await this.getSession(userId, guildId);
 
       if (!session) {
@@ -139,7 +157,7 @@ export class SessionManager {
       logger.info(`Session transferred for user ${userId} from ${session.oldChannelId} to ${newChannelId} (guild: ${guildId}, faction: ${factionId || 'none'})`);
     } catch (error) {
       logger.error(`Failed to transfer session for user ${userId}:`, error);
-      throw error;
+      // Don't re-throw - error is logged, let caller continue
     }
   }
 
@@ -152,6 +170,12 @@ export class SessionManager {
     newTimestamp: number
   ): Promise<void> {
     try {
+      // Check if Redis is connected
+      if (!redis.isReady()) {
+        logger.error(`Cannot update session timestamp for user ${userId}: Redis not connected`);
+        return; // Gracefully fail without throwing
+      }
+
       const session = await this.getSession(userId, guildId);
 
       if (!session) {
@@ -168,7 +192,7 @@ export class SessionManager {
       await redis.setex(key, ttl, JSON.stringify(session));
     } catch (error) {
       logger.error(`Failed to update session timestamp for user ${userId}:`, error);
-      throw error;
+      // Don't re-throw - error is logged, let caller continue
     }
   }
 
