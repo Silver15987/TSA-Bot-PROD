@@ -88,20 +88,39 @@ export class DiscordResourceManager {
     categoryId: string
   ): Promise<VoiceChannel | null> {
     try {
+      // Get beta role IDs from config
+      const config = configManager.getConfig(guild.id);
+      const betaRoleIds = config.admin?.betaRoleIds || [];
+
+      // Build permission overwrites array
+      const permissionOverwrites: any[] = [
+        {
+          id: guild.id, // @everyone
+          deny: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel],
+        },
+        {
+          id: role.id, // Faction members - full access
+          allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Speak],
+        },
+      ];
+
+      // TODO: Temporary for beta testing - later will allow everyone to view
+      // Add beta tester permissions (can view but cannot join)
+      if (betaRoleIds.length > 0) {
+        for (const betaRoleId of betaRoleIds) {
+          permissionOverwrites.push({
+            id: betaRoleId,
+            allow: [PermissionFlagsBits.ViewChannel],
+            deny: [PermissionFlagsBits.Connect],
+          });
+        }
+      }
+
       const channel = await guild.channels.create({
         name: `${factionName} HQ`,
         type: ChannelType.GuildVoice,
         parent: categoryId,
-        permissionOverwrites: [
-          {
-            id: guild.id, // @everyone
-            deny: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel],
-          },
-          {
-            id: role.id, // Faction members
-            allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Speak],
-          },
-        ],
+        permissionOverwrites,
         reason: `Faction creation: ${factionName}`,
       });
 
