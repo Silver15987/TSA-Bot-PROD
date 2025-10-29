@@ -16,6 +16,12 @@ export class BotClient extends Client {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions,
+      ],
+      partials: [
+        1, // PartialTypes.Message
+        2, // PartialTypes.Channel
+        5, // PartialTypes.Reaction
       ],
       presence: {
         status: 'online',

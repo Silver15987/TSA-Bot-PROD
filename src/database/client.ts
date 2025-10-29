@@ -9,6 +9,7 @@ import {
   WarDocument,
   TransactionDocument,
   ServerConfigDocument,
+  ReactionRoleDocument,
 } from '../types/database';
 
 /**
@@ -117,6 +118,10 @@ class DatabaseClient {
     return this.getCollection<ServerConfigDocument>('serverConfigs');
   }
 
+  get reactionRoles(): Collection<ReactionRoleDocument> {
+    return this.getCollection<ReactionRoleDocument>('reactionRoles');
+  }
+
   /**
    * Create database indexes for performance
    */
@@ -161,6 +166,10 @@ class DatabaseClient {
 
       // ServerConfigs indexes
       await this.serverConfigs.createIndex({ guildId: 1 }, { unique: true });
+
+      // ReactionRoles indexes
+      await this.reactionRoles.createIndex({ messageId: 1, emoji: 1 }, { unique: true });
+      await this.reactionRoles.createIndex({ guildId: 1 });
 
       logger.info('Database indexes created successfully');
     } catch (error) {

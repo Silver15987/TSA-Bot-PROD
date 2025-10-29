@@ -24,20 +24,32 @@ export class RecoveryManager {
             continue;
           }
 
-          const trackedCategoryId = categoryValidator.getTrackedCategoryId(guild.id);
-          const category = await guild.channels.fetch(trackedCategoryId).catch(() => null);
+          const trackedCategoryIds = categoryValidator.getTrackedCategoryIds(guild.id);
 
-          if (!category || category.type !== ChannelType.GuildCategory) {
-            logger.warn(
-              `Tracked category ${trackedCategoryId} not found or invalid in guild ${guild.id}`
-            );
+          // Validate all tracked categories
+          const validCategoryIds: string[] = [];
+          for (const categoryId of trackedCategoryIds) {
+            const category = await guild.channels.fetch(categoryId).catch(() => null);
+            if (category && category.type === ChannelType.GuildCategory) {
+              validCategoryIds.push(categoryId);
+            } else {
+              logger.warn(
+                `Tracked category ${categoryId} not found or invalid in guild ${guild.id}`
+              );
+            }
+          }
+
+          if (validCategoryIds.length === 0) {
+            logger.warn(`No valid tracked categories found in guild ${guild.id}`);
             continue;
           }
 
+          // Get all voice channels in any of the tracked categories
           const voiceChannels = guild.channels.cache.filter(
             (ch) =>
               ch.type === ChannelType.GuildVoice &&
-              ch.parentId === trackedCategoryId
+              ch.parentId !== null &&
+              validCategoryIds.includes(ch.parentId)
           );
 
           for (const channel of voiceChannels.values()) {

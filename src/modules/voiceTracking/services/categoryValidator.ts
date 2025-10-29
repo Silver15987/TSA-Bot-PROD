@@ -9,7 +9,7 @@ import logger from '../../../core/logger';
  */
 export class CategoryValidator {
   /**
-   * Check if a channel is trackable (belongs to tracked category)
+   * Check if a channel is trackable (belongs to tracked categories)
    */
   async isTrackableChannel(
     channelId: string,
@@ -40,7 +40,8 @@ export class CategoryValidator {
         return false;
       }
 
-      return voiceChannel.parentId === config.vcTracking.trackedCategoryId;
+      // Check if channel's parent is in any of the tracked categories
+      return config.vcTracking.trackedCategoryIds.includes(voiceChannel.parentId);
     } catch (error) {
       logger.error(`Error checking if channel ${channelId} is trackable:`, error);
       return false;
@@ -48,11 +49,11 @@ export class CategoryValidator {
   }
 
   /**
-   * Get tracked category ID for a guild
+   * Get tracked category IDs for a guild
    */
-  getTrackedCategoryId(guildId: string): string {
+  getTrackedCategoryIds(guildId: string): string[] {
     const config = configManager.getConfig(guildId);
-    return config.vcTracking.trackedCategoryId;
+    return config.vcTracking.trackedCategoryIds;
   }
 
   /**

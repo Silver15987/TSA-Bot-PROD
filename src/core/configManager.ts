@@ -16,7 +16,7 @@ class ConfigManager {
    */
   async loadConfig(guildId: string): Promise<ServerConfigDocument> {
     try {
-      const serverConfig = await database.serverConfigs.findOne({ guildId });
+      let serverConfig = await database.serverConfigs.findOne({ guildId });
 
       if (!serverConfig) {
         logger.info(`No config found for guild ${guildId}, creating default config`);
@@ -25,6 +25,32 @@ class ConfigManager {
         this.loadTimestamps.set(guildId, new Date());
         logger.info(`Loaded config for guild ${guildId} (version ${newConfig.version})`);
         return newConfig;
+      }
+
+      // Migration: Convert old single trackedCategoryId to array trackedCategoryIds
+      if (serverConfig.vcTracking && 'trackedCategoryId' in serverConfig.vcTracking) {
+        logger.info(`Migrating config for guild ${guildId}: trackedCategoryId → trackedCategoryIds`);
+        const oldCategoryId = (serverConfig.vcTracking as any).trackedCategoryId;
+
+        await database.serverConfigs.updateOne(
+          { guildId },
+          {
+            $set: {
+              'vcTracking.trackedCategoryIds': [oldCategoryId],
+            },
+            $unset: {
+              'vcTracking.trackedCategoryId': '',
+            },
+            $inc: { version: 1 },
+          }
+        );
+
+        // Reload the updated config
+        serverConfig = await database.serverConfigs.findOne({ guildId });
+        if (!serverConfig) {
+          throw new Error(`Failed to reload config after migration for guild ${guildId}`);
+        }
+        logger.info(`Migration complete for guild ${guildId} (version ${serverConfig.version})`);
       }
 
       this.configCache.set(guildId, serverConfig);
@@ -100,7 +126,7 @@ class ConfigManager {
 
       vcTracking: {
         enabled: true,
-        trackedCategoryId: process.env.VC_CATEGORY_ID || '719217565263593482',
+        trackedCategoryIds: this.parseCategoryIds(),
         coinsPerSecond: parseFloat(config.economy.coinsPerSecond.toString()) || 0.1,
         sessionTTL: 86400,
         syncInterval: 300,
@@ -187,6 +213,27 @@ class ConfigManager {
     }
 
     return insertedConfig;
+  }
+
+  /**
+   * Parse category IDs from environment variables
+   * Supports both VC_CATEGORY_IDS (comma-separated) and VC_CATEGORY_ID (single, backward compatible)
+   */
+  private parseCategoryIds(): string[] {
+    // Check for new format first (comma-separated)
+    if (process.env.VC_CATEGORY_IDS) {
+      return process.env.VC_CATEGORY_IDS.split(',')
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+    }
+
+    // Fall back to old format (single category)
+    if (process.env.VC_CATEGORY_ID) {
+      return [process.env.VC_CATEGORY_ID];
+    }
+
+    // Default fallback
+    return ['719217565263593482'];
   }
 
   /**

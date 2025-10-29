@@ -178,7 +178,7 @@ async function handleView(interaction: ChatInputCommandInteraction, guildId: str
     const configText = `**Server Configuration**\n\n` +
       `**Voice Tracking:**\n` +
       `• Enabled: ${config.vcTracking.enabled ? '✅' : '❌'}\n` +
-      `• Tracked Category: ${config.vcTracking.trackedCategoryId}\n` +
+      `• Tracked Categories: ${config.vcTracking.trackedCategoryIds.join(', ')}\n` +
       `• Coins per Second: ${config.vcTracking.coinsPerSecond}\n` +
       `• Session TTL: ${config.vcTracking.sessionTTL}s\n` +
       `• Sync Interval: ${config.vcTracking.syncInterval}s\n\n` +

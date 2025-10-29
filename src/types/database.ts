@@ -264,7 +264,7 @@ export interface ServerConfigDocument {
   // VC Tracking Configuration
   vcTracking: {
     enabled: boolean;
-    trackedCategoryId: string;
+    trackedCategoryIds: string[]; // Support multiple tracked categories
     coinsPerSecond: number;
     sessionTTL: number;
     syncInterval: number;
@@ -339,4 +339,17 @@ export interface ServerConfigDocument {
   updatedAt: Date;
   updatedBy: string;
   version: number;
+}
+
+/**
+ * Reaction Role Document Schema
+ */
+export interface ReactionRoleDocument {
+  messageId: string; // Discord message ID
+  channelId: string; // Discord channel ID
+  guildId: string; // Discord server ID
+  roleId: string; // Discord role ID to assign
+  emoji: string; // Emoji to react with (unicode or custom emoji ID)
+  createdAt: Date;
+  createdBy: string; // User ID who created the reaction role
 }
