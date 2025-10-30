@@ -72,7 +72,7 @@ export default {
             inline: true,
           }
         )
-        .setFooter({ text: `Member since ${userData.createdAt.toLocaleDateString()}` })
+        .setFooter({ text: `Member since ${(userData.createdAt || userData.updatedAt || new Date()).toLocaleDateString()}` })
         .setTimestamp();
 
       if (userData.currentFaction) {
