@@ -3,6 +3,7 @@ import { database } from '../database/client';
 import { leaderboardService } from '../modules/leaderboard/services/leaderboardService';
 import { FactionMemberLeaderboardType } from '../modules/leaderboard/types';
 import logger from '../core/logger';
+import { formatHoursMinutes } from '../utils/timeFormatters';
 
 export default {
   data: new SlashCommandBuilder()
@@ -191,14 +192,7 @@ export default {
    * Format milliseconds to readable time
    */
   formatTime(ms: number): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
+    return formatHoursMinutes(ms);
   },
 };
 

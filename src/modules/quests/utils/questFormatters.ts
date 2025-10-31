@@ -1,6 +1,7 @@
 import { QuestDocument } from '../../../types/database';
 import { QuestType } from '../types';
 import { getDifficultyEmoji, getDifficultyLabel } from './difficultyScaler';
+import { formatHoursMinutes } from '../../../utils/timeFormatters';
 
 /**
  * Format quest type for display
@@ -48,14 +49,7 @@ export function formatQuestProgress(type: QuestType, progress: number): string {
  * Format duration in milliseconds to human-readable string
  */
 export function formatDuration(ms: number): string {
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-
-  if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  } else {
-    return `${minutes}m`;
-  }
+  return formatHoursMinutes(ms);
 }
 
 /**

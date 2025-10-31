@@ -1,6 +1,7 @@
 import { FactionDocument } from '../../../types/database';
 import { FactionRole } from '../types';
 import { EmbedBuilder } from 'discord.js';
+import { formatDuration as sharedFormatDuration } from '../../../utils/timeFormatters';
 
 /**
  * Faction Formatters
@@ -42,20 +43,7 @@ export class FactionFormatter {
    * Format time duration in milliseconds to human-readable format
    */
   formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) {
-      return `${days}d ${hours % 24}h`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
-    }
+    return sharedFormatDuration(ms, { shortFormat: true, includeSeconds: true });
   }
 
   /**

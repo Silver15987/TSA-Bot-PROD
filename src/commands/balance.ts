@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { database } from '../database/client';
 import logger from '../core/logger';
+import { formatHoursMinutes } from '../utils/timeFormatters';
 
 export default {
   data: new SlashCommandBuilder()
@@ -33,9 +34,6 @@ export default {
         return;
       }
 
-      const vcHours = Math.floor(userData.totalVcTime / 3600);
-      const vcMinutes = Math.floor((userData.totalVcTime % 3600) / 60);
-
       const embed = new EmbedBuilder()
         .setColor(0x3498db)
         .setTitle(`${targetUser.username}'s Profile`)
@@ -48,7 +46,7 @@ export default {
           },
           {
             name: '🎤 VC Time',
-            value: `${vcHours}h ${vcMinutes}m`,
+            value: formatHoursMinutes(userData.totalVcTime),
             inline: true,
           },
           {

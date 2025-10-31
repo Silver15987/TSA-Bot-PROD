@@ -3,6 +3,7 @@ import { database } from '../database/client';
 import { sessionManager } from '../modules/voiceTracking/services/sessionManager';
 import { coinCalculator } from '../modules/voiceTracking/services/coinCalculator';
 import logger from '../core/logger';
+import { formatDuration } from '../utils/timeFormatters';
 
 export default {
   data: new SlashCommandBuilder()
@@ -43,7 +44,7 @@ export default {
         const currentCoins = coinCalculator.calculateCoins(currentDuration, guildId);
 
         currentSessionInfo = `\n\n**Current Session:**\n` +
-          `Duration: ${formatDuration(currentDuration)}\n` +
+          `Duration: ${formatDuration(currentDuration, { shortFormat: true })}\n` +
           `Coins Earning: ${currentCoins.toLocaleString()}`;
       }
 
@@ -54,17 +55,17 @@ export default {
         .addFields(
           {
             name: 'Total VC Time',
-            value: formatDuration(userData.totalVcTime),
+            value: formatDuration(userData.totalVcTime, { shortFormat: true }),
             inline: true,
           },
           {
             name: 'Daily VC Time',
-            value: formatDuration(userData.dailyVcTime),
+            value: formatDuration(userData.dailyVcTime, { shortFormat: true }),
             inline: true,
           },
           {
             name: 'Weekly VC Time',
-            value: formatDuration(userData.weeklyVcTime),
+            value: formatDuration(userData.weeklyVcTime, { shortFormat: true }),
             inline: true,
           },
           {
@@ -111,28 +112,6 @@ export default {
     }
   },
 };
-
-/**
- * Format duration in milliseconds to human-readable format
- */
-function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) {
-    const remainingHours = hours % 24;
-    return `${days}d ${remainingHours}h`;
-  } else if (hours > 0) {
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-  } else if (minutes > 0) {
-    return `${minutes}m`;
-  } else {
-    return `${seconds}s`;
-  }
-}
 
 /**
  * Format date to relative time or absolute date
