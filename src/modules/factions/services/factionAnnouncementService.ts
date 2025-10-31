@@ -51,9 +51,14 @@ export class FactionAnnouncementService {
       const randomMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
 
       // Replace placeholders
+      // Note: {role} is replaced with role name only (no ping) to avoid spamming members
+      const guild = await client.guilds.fetch(guildId);
+      const role = await guild.roles.fetch(factionRoleId);
+      const roleName = role ? role.name : 'faction';
+
       const message = randomMessage
         .replace(/{user}/g, newMemberUsername)
-        .replace(/{role}/g, `<@&${factionRoleId}>`);
+        .replace(/{role}/g, roleName);
 
       await channel.send(message);
 
