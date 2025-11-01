@@ -86,7 +86,7 @@ export class FactionManager {
    */
   async getFactionById(factionId: string, guildId: string): Promise<FactionDocument | null> {
     try {
-      return await database.factions.findOne({ id: factionId, guildId });
+      return await database.factions.findOne({ id: factionId, guildId, disbanded: { $ne: true } });
     } catch (error) {
       logger.error(`Failed to get faction ${factionId}:`, error);
       return null;

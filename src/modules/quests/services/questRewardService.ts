@@ -118,11 +118,20 @@ export class QuestRewardService {
         await this.applyBonusEffect(quest.bonusEffect, faction, guildId);
       }
 
-      logger.info(`Successfully distributed rewards for quest ${quest.id}`);
+      // Log success summary
+      logger.info(`Reward distribution summary for quest ${quest.id}:`);
+      logger.info(`  - Quest: "${quest.name}"`);
+      logger.info(`  - Faction: ${faction.name} (${faction.id})`);
+      logger.info(`  - Treasury: +${quest.treasuryReward} coins`);
+      logger.info(`  - Individual rewards: ${rewardCalculations.length} users`);
+      logger.info(`Successfully distributed all rewards for quest ${quest.id}`);
 
       return true;
     } catch (error) {
-      logger.error(`Error distributing rewards for quest ${quest.id}:`, error);
+      logger.error(`CRITICAL ERROR distributing rewards for quest ${quest.id}:`, error);
+      logger.error(`  - Quest: "${quest.name}"`);
+      logger.error(`  - Faction: ${quest.factionId}`);
+      logger.error(`  - Error: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }
@@ -199,16 +208,18 @@ export class QuestRewardService {
       }
 
       // Create transaction record
-      if (!user) {
+      // Refetch user to get accurate balance after update
+      const updatedUser = await database.users.findOne({ id: userId, guildId });
+      if (!updatedUser) {
         throw new Error(`User ${userId} not found after update`);
       }
-      const newBalance = (user.coins || 0) + amount;
+
       await database.transactions.insertOne({
         id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
         userId,
         type: 'quest_reward',
         amount,
-        balanceAfter: newBalance,
+        balanceAfter: updatedUser.coins,
         metadata: {
           questId,
           source: 'quest_completion',
@@ -219,6 +230,7 @@ export class QuestRewardService {
       logger.info(`Distributed ${amount} coins to user ${userId} from quest ${questId}`);
     } catch (error) {
       logger.error(`Error distributing individual reward to user ${userId}:`, error);
+      throw error; // Propagate error to caller
     }
   }
 
