@@ -162,45 +162,54 @@ export class SessionManager {
   }
 
   /**
-   * Update session's last activity (for periodic sync)
+   * Update session TTL (for periodic sync)
+   * NOTE: This ONLY refreshes the TTL, does NOT modify session data
+   * Previously this overwrote joinedAt which broke duration calculations
    */
-  async updateSessionTimestamp(
+  async refreshSessionTTL(
     userId: string,
-    guildId: string,
-    newTimestamp: number
+    guildId: string
   ): Promise<void> {
     try {
       // Check if Redis is connected
       if (!redis.isReady()) {
-        logger.error(`Cannot update session timestamp for user ${userId}: Redis not connected`);
+        logger.error(`Cannot refresh session TTL for user ${userId}: Redis not connected`);
         return; // Gracefully fail without throwing
       }
-
-      const session = await this.getSession(userId, guildId);
-
-      if (!session) {
-        logger.warn(`Cannot update timestamp: No session found for user ${userId}`);
-        return;
-      }
-
-      session.joinedAt = newTimestamp;
 
       const key = this.getSessionKey(guildId, userId);
       const config = configManager.getConfig(guildId);
       const ttl = config.vcTracking.sessionTTL;
 
-      await redis.setex(key, ttl, JSON.stringify(session));
+      // Simply refresh the TTL without modifying session data
+      await redis.expire(key, ttl);
+
+      logger.debug(`Session TTL refreshed for user ${userId}`);
     } catch (error) {
-      logger.error(`Failed to update session timestamp for user ${userId}:`, error);
+      logger.error(`Failed to refresh session TTL for user ${userId}:`, error);
       // Don't re-throw - error is logged, let caller continue
     }
   }
 
   /**
+   * @deprecated Use refreshSessionTTL() instead
+   * This method is kept for backward compatibility but should not be used
+   */
+  async updateSessionTimestamp(
+    userId: string,
+    guildId: string,
+    _newTimestamp: number // eslint-disable-line @typescript-eslint/no-unused-vars
+  ): Promise<void> {
+    logger.warn(`updateSessionTimestamp is deprecated, use refreshSessionTTL instead`);
+    await this.refreshSessionTTL(userId, guildId);
+  }
+
+  /**
    * Calculate session duration
+   * CRITICAL: Uses sessionStartTime (immutable) not joinedAt (which gets updated)
    */
   calculateDuration(session: VCSession): number {
-    return Date.now() - session.joinedAt;
+    return Date.now() - session.sessionStartTime;
   }
 
   /**

@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "refresh-commands": "tsx scripts/refresh-commands.ts",
     "set-faction-category": "tsx scripts/set-faction-category.ts",
+    "migrate:vc-activity": "tsx scripts/migrate-add-vc-activity.ts",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""

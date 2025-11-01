@@ -354,3 +354,30 @@ export interface ReactionRoleDocument {
   createdAt: Date;
   createdBy: string; // User ID who created the reaction role
 }
+
+/**
+ * VC Activity Document Schema
+ * Stores individual VC session records for historical tracking
+ */
+export interface VCActivityDocument {
+  id: string; // session_userId_timestamp (e.g., "session_123456789_1698765432000")
+  userId: string; // Discord user ID
+  guildId: string; // Discord guild ID
+
+  // Session details
+  startTime: Date; // When session started
+  endTime: Date; // When session ended
+  duration: number; // Duration in milliseconds (for easy aggregation)
+
+  // Context
+  channelId: string; // Which VC channel
+  channelType: 'faction' | 'general'; // Quick classification
+  factionId: string | null; // Faction ID if in faction VC, null otherwise
+
+  // Earnings
+  coinsEarned: number; // Coins earned this session
+
+  // Metadata
+  date: Date; // Date normalized to 00:00:00 UTC (for daily aggregation)
+  createdAt: Date; // Record creation timestamp (for TTL index)
+}

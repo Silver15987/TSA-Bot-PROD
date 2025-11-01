@@ -10,6 +10,7 @@ import {
   TransactionDocument,
   ServerConfigDocument,
   ReactionRoleDocument,
+  VCActivityDocument,
 } from '../types/database';
 
 /**
@@ -122,6 +123,10 @@ class DatabaseClient {
     return this.getCollection<ReactionRoleDocument>('reactionRoles');
   }
 
+  get vcActivity(): Collection<VCActivityDocument> {
+    return this.getCollection<VCActivityDocument>('vcActivity');
+  }
+
   /**
    * Create database indexes for performance
    */
@@ -170,6 +175,15 @@ class DatabaseClient {
       // ReactionRoles indexes
       await this.reactionRoles.createIndex({ messageId: 1, emoji: 1 }, { unique: true });
       await this.reactionRoles.createIndex({ guildId: 1 });
+
+      // VCActivity indexes
+      await this.vcActivity.createIndex({ userId: 1, date: -1 }); // Query by user + date range
+      await this.vcActivity.createIndex({ factionId: 1, date: -1 }); // Query by faction
+      await this.vcActivity.createIndex({ guildId: 1, date: -1 }); // Query by guild
+      await this.vcActivity.createIndex(
+        { createdAt: 1 },
+        { expireAfterSeconds: 7776000 } // TTL: 90 days
+      );
 
       logger.info('Database indexes created successfully');
     } catch (error) {

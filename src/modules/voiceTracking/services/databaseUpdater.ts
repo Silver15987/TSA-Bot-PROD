@@ -3,6 +3,7 @@ import logger from '../../../core/logger';
 import { sessionManager } from './sessionManager';
 import { coinCalculator } from './coinCalculator';
 import { streakManager } from './streakManager';
+import { dailyResetManager } from './dailyResetManager';
 import { factionStatsTracker } from '../../factions/services/factionStatsTracker';
 import { VCSession } from '../types';
 
@@ -104,7 +105,8 @@ export class DatabaseUpdater {
         }
       }
 
-      await sessionManager.updateSessionTimestamp(session.userId, guildId, Date.now());
+      // Refresh TTL to keep session alive (don't modify session data)
+      await sessionManager.refreshSessionTTL(session.userId, guildId);
 
       logger.debug(
         `Incremental save for user ${session.userId}: Duration ${Math.floor(duration / 1000)}s, Coins: ${coinsEarned}${session.factionId ? `, Faction: ${session.factionId}` : ''}`
@@ -127,6 +129,18 @@ export class DatabaseUpdater {
   ): Promise<void> {
     const today = new Date();
 
+    // ========================================
+    // CHECK AND RESET BEFORE UPDATING STATS
+    // ========================================
+    let resetOccurred = false;
+    try {
+      const resetInfo = await dailyResetManager.checkAndResetUser(userId, guildId);
+      resetOccurred = resetInfo.daily || resetInfo.weekly || resetInfo.monthly;
+    } catch (error) {
+      logger.error(`Error checking/resetting user ${userId}:`, error);
+      // Continue with session save - don't let reset failure block it
+    }
+
     const setFields: any = {
       lastActiveDate: today,
       updatedAt: today,
@@ -137,42 +151,201 @@ export class DatabaseUpdater {
       setFields.username = username;
     }
 
-    await database.users.updateOne(
-      { id: userId, guildId },
-      {
-        $inc: {
-          totalVcTime: duration,
-          dailyVcTime: duration,
-          weeklyVcTime: duration,
-          monthlyVcTime: duration,
-          coins: coinsEarned,
-          totalCoinsEarned: coinsEarned,
-          dailyCoinsEarned: coinsEarned,
-          weeklyCoinsEarned: coinsEarned,
-          monthlyCoinsEarned: coinsEarned,
+    // ========================================
+    // HANDLE SESSIONS SPANNING RESET BOUNDARIES
+    // ========================================
+    // If a reset occurred, we need to split the session duration between
+    // the old period (before reset) and new period (after reset).
+    // The totalVcTime gets the full duration, but daily/weekly/monthly
+    // only get the portion from the current period.
+
+    let dailyDuration = duration;
+    let weeklyDuration = duration;
+    let monthlyDuration = duration;
+    let dailyCoins = coinsEarned;
+    let weeklyCoins = coinsEarned;
+    let monthlyCoins = coinsEarned;
+
+    if (resetOccurred) {
+      // Get user's current reset timestamps to determine boundary
+      const user = await database.users.findOne({ id: userId, guildId });
+
+      if (user && user.lastDailyReset) {
+        const sessionStart = session.sessionStartTime;
+        const sessionEnd = today.getTime();
+
+        // Calculate time in new period (after reset)
+        const resetBoundary = new Date(user.lastDailyReset).getTime();
+
+        if (sessionStart < resetBoundary && sessionEnd > resetBoundary) {
+          // Session spans the reset boundary
+          const timeInNewPeriod = sessionEnd - resetBoundary;
+          const timeInOldPeriod = resetBoundary - sessionStart;
+
+          // Only count time from new period for daily/weekly/monthly
+          dailyDuration = timeInNewPeriod;
+          weeklyDuration = timeInNewPeriod;
+          monthlyDuration = timeInNewPeriod;
+
+          // Split coins proportionally
+          const proportionInNewPeriod = timeInNewPeriod / duration;
+          dailyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+          weeklyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+          monthlyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+
+          logger.info(
+            `Session for user ${userId} spans reset boundary: ` +
+            `${Math.floor(timeInOldPeriod / 1000)}s in old period, ` +
+            `${Math.floor(timeInNewPeriod / 1000)}s in new period`
+          );
+        }
+      }
+    }
+
+    // ========================================
+    // ATOMIC OPERATION: Update balance and create transaction
+    // ========================================
+    // While we can't use true ACID transactions in Cosmos DB (MongoDB API),
+    // we can ensure consistency through careful ordering and error handling
+
+    let userUpdateResult;
+    try {
+      userUpdateResult = await database.users.updateOne(
+        { id: userId, guildId },
+        {
+          $inc: {
+            totalVcTime: duration,
+            dailyVcTime: dailyDuration,
+            weeklyVcTime: weeklyDuration,
+            monthlyVcTime: monthlyDuration,
+            coins: coinsEarned,
+            totalCoinsEarned: coinsEarned,
+            dailyCoinsEarned: dailyCoins,
+            weeklyCoinsEarned: weeklyCoins,
+            monthlyCoinsEarned: monthlyCoins,
+          },
+          $set: setFields,
+          $setOnInsert: {
+            // Initialize reset timestamps for new users created via auto-upsert
+            lastDailyReset: today,
+            lastWeeklyReset: today,
+            lastMonthlyReset: today,
+          },
         },
-        $set: setFields,
-      },
-      { upsert: true }
-    );
+        { upsert: true }
+      );
+    } catch (error) {
+      logger.error(`CRITICAL: Failed to update user ${userId} balance:`, error);
+      throw error; // Re-throw to prevent transaction creation
+    }
 
+    // Verify the update succeeded
+    if (!userUpdateResult.acknowledged) {
+      throw new Error(`User update not acknowledged for ${userId}`);
+    }
+
+    // Get updated balance for transaction record
     const userAfterUpdate = await database.users.findOne({ id: userId, guildId });
-    const balanceAfter = userAfterUpdate?.coins || 0;
+    if (!userAfterUpdate) {
+      // This should never happen if update succeeded, but handle it
+      logger.error(`CRITICAL: User ${userId} not found after successful update`);
+      throw new Error(`User ${userId} not found after update`);
+    }
+    const balanceAfter = userAfterUpdate.coins;
 
-    await database.transactions.insertOne({
-      id: this.generateTransactionId(),
-      userId,
-      type: 'vctime_earn',
-      amount: coinsEarned,
-      balanceAfter,
-      metadata: {
-        duration,
-        channelId: session.channelId,
-        factionId: session.factionId,
-        guildId,
-      },
-      createdAt: today,
-    });
+    // Create transaction record (use updateOne with upsert for idempotency)
+    const transactionId = this.generateTransactionId();
+    try {
+      await database.transactions.updateOne(
+        { id: transactionId },
+        {
+          $set: {
+            userId,
+            type: 'vctime_earn',
+            amount: coinsEarned,
+            balanceAfter,
+            metadata: {
+              duration,
+              channelId: session.channelId,
+              factionId: session.factionId,
+              guildId,
+            },
+            createdAt: today,
+          },
+        },
+        { upsert: true }
+      );
+    } catch (error) {
+      // Transaction record failed to create
+      // Balance was already updated - log this as a ledger inconsistency
+      logger.error(
+        `LEDGER INCONSISTENCY: User ${userId} balance updated (+${coinsEarned}) ` +
+        `but transaction ${transactionId} failed to create:`,
+        error
+      );
+      // Don't throw - balance update succeeded, user got coins
+      // Transaction record is supplementary
+    }
+
+    // ========================================
+    // SAVE INDIVIDUAL SESSION TO VC ACTIVITY
+    // ========================================
+    await this.saveVcActivityRecord(userId, guildId, duration, coinsEarned, session, today);
+  }
+
+  /**
+   * Save individual session record to vcActivity collection
+   */
+  private async saveVcActivityRecord(
+    userId: string,
+    guildId: string,
+    duration: number,
+    coinsEarned: number,
+    session: VCSession,
+    endTime: Date
+  ): Promise<void> {
+    try {
+      const startTime = new Date(session.sessionStartTime);
+      const normalizedDate = this.getStartOfDay(endTime);
+
+      // Determine channel type
+      const channelType: 'faction' | 'general' = session.factionId ? 'faction' : 'general';
+
+      // Use updateOne with upsert to prevent duplicate key errors if same session saved twice
+      await database.vcActivity.updateOne(
+        { id: `session_${userId}_${session.sessionStartTime}` },
+        {
+          $set: {
+            userId,
+            guildId,
+            startTime,
+            endTime,
+            duration,
+            channelId: session.channelId,
+            channelType,
+            factionId: session.factionId ?? null, // Handle undefined -> null conversion
+            coinsEarned,
+            date: normalizedDate,
+            createdAt: endTime,
+          },
+        },
+        { upsert: true }
+      );
+
+      logger.debug(`Saved VC activity record for user ${userId}: ${duration}ms in channel ${session.channelId}`);
+    } catch (error) {
+      logger.error(`Error saving VC activity record for user ${userId}:`, error);
+      // Don't throw - this is supplementary data, don't fail the whole session save
+    }
+  }
+
+  /**
+   * Get start of day (00:00:00 UTC) for date normalization
+   */
+  private getStartOfDay(date: Date): Date {
+    const d = new Date(date);
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
   }
 
   /**
