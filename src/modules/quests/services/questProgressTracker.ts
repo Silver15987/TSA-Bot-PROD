@@ -165,26 +165,35 @@ export class QuestProgressTracker {
   ): Promise<void> {
     try {
       if (currentProgress >= goal) {
-        // Quest completed!
+        // Quest goal reached!
+        logger.info(`Quest ${questId} goal reached! Progress: ${currentProgress}/${goal}`);
+
+        // Get quest (still in 'active' status)
+        const quest = await questManager.getQuestById(questId, guildId);
+        if (!quest) {
+          logger.error(`Quest ${questId} not found for completion`);
+          return;
+        }
+
+        // Import service dynamically to avoid circular dependencies
+        const { questRewardService } = await import('./questRewardService');
+
+        // Distribute rewards FIRST (can throw if error occurs)
+        await questRewardService.distributeRewards(quest, guildId);
+
+        // Only mark as completed if rewards were successfully distributed
         await questManager.updateQuestStatus(questId, guildId, 'completed');
 
-        logger.info(`Quest ${questId} completed! Progress: ${currentProgress}/${goal}`);
+        logger.info(`Quest ${questId} completed successfully with all rewards distributed`);
 
-        // Get updated quest with completion status
-        const quest = await questManager.getQuestById(questId, guildId);
-        if (quest) {
-          // Import service dynamically to avoid circular dependencies
-          const { questRewardService } = await import('./questRewardService');
-
-          // Distribute rewards
-          await questRewardService.distributeRewards(quest, guildId);
-
-          // Note: Announcement will be sent by the scheduler task
-          // when it detects the completed quest
-        }
+        // Note: Announcement will be sent by the scheduler task
+        // when it detects the completed quest
       }
     } catch (error) {
       logger.error(`Error checking quest completion for ${questId}:`, error);
+      logger.error(`Quest remains in active state and can be retried`);
+      // Propagate error so calling code knows completion failed
+      throw error;
     }
   }
 
