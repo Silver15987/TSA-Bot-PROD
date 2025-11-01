@@ -94,6 +94,14 @@ export class DatabaseUpdater {
           session.userId,
           duration
         );
+
+        // Update quest progress for VC time quests
+        try {
+          const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
+          await questProgressTracker.trackVcTimeContribution(session.userId, guildId, session.factionId, duration);
+        } catch (error) {
+          logger.error('Error tracking quest VC time contribution:', error);
+        }
       }
 
       await sessionManager.updateSessionTimestamp(session.userId, guildId, Date.now());
