@@ -31,6 +31,7 @@ export class SessionManager {
         channelId,
         joinedAt: now,
         sessionStartTime: now, // Set original start time
+        lastSavedDuration: 0, // Initialize to 0 (no time saved yet)
         factionId, // Store faction ID if present
       };
 
@@ -210,6 +211,56 @@ export class SessionManager {
    */
   calculateDuration(session: VCSession): number {
     return Date.now() - session.sessionStartTime;
+  }
+
+  /**
+   * Calculate INCREMENTAL duration (time since last save)
+   * Used for incremental saves to prevent double-counting with $inc operator
+   * Returns only the NEW time that hasn't been saved yet
+   */
+  calculateIncrementalDuration(session: VCSession): number {
+    const currentTotalDuration = Date.now() - session.sessionStartTime;
+    const alreadySavedDuration = session.lastSavedDuration || 0;
+    const incrementalDuration = currentTotalDuration - alreadySavedDuration;
+
+    logger.debug(
+      `Incremental duration for user ${session.userId}: ` +
+      `total=${currentTotalDuration}ms, saved=${alreadySavedDuration}ms, delta=${incrementalDuration}ms`
+    );
+
+    return incrementalDuration;
+  }
+
+  /**
+   * Update the lastSavedDuration field after successful save
+   * This prevents double-counting in future incremental saves
+   */
+  async updateLastSavedDuration(userId: string, guildId: string, duration: number): Promise<void> {
+    try {
+      if (!redis.isReady()) {
+        logger.error(`Cannot update lastSavedDuration for user ${userId}: Redis not connected`);
+        return;
+      }
+
+      const session = await this.getSession(userId, guildId);
+      if (!session) {
+        logger.warn(`Cannot update lastSavedDuration: No session found for user ${userId}`);
+        return;
+      }
+
+      session.lastSavedDuration = duration;
+
+      const key = this.getSessionKey(guildId, userId);
+      const config = configManager.getConfig(guildId);
+      const ttl = config.vcTracking.sessionTTL;
+
+      await redis.setex(key, ttl, JSON.stringify(session));
+
+      logger.debug(`Updated lastSavedDuration for user ${userId} to ${duration}ms`);
+    } catch (error) {
+      logger.error(`Failed to update lastSavedDuration for user ${userId}:`, error);
+      // Don't re-throw - error is logged, let caller continue
+    }
   }
 
   /**

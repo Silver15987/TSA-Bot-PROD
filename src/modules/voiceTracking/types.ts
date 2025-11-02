@@ -8,6 +8,7 @@ export interface VCSession {
   channelId: string;
   joinedAt: number; // Used for incremental save calculations
   sessionStartTime: number; // Original session start timestamp (never changes, used for /vcstats)
+  lastSavedDuration: number; // Cumulative duration at last save (for incremental delta calculation)
   factionId?: string; // Optional: ID of faction if in faction VC
   transferred?: boolean; // Flag indicating if user was moved between VCs
   oldChannelId?: string; // Previous channel ID if transferred

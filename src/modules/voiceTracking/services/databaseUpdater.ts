@@ -82,10 +82,12 @@ export class DatabaseUpdater {
    */
   async saveSessionIncremental(session: VCSession, guildId: string, username?: string): Promise<void> {
     try {
-      const duration = sessionManager.calculateDuration(session);
-      const coinsEarned = coinCalculator.calculateCoins(duration, guildId);
+      // CRITICAL: Use incremental duration to prevent double-counting
+      // calculateIncrementalDuration returns only NEW time since last save
+      const incrementalDuration = sessionManager.calculateIncrementalDuration(session);
+      const coinsEarned = coinCalculator.calculateCoins(incrementalDuration, guildId);
 
-      await this.saveSessionData(session.userId, guildId, duration, coinsEarned, session, username);
+      await this.saveSessionData(session.userId, guildId, incrementalDuration, coinsEarned, session, username);
 
       // If session is in a faction VC, update faction stats
       if (session.factionId) {
@@ -93,23 +95,24 @@ export class DatabaseUpdater {
           session.factionId,
           guildId,
           session.userId,
-          duration
+          incrementalDuration
         );
 
         // Update quest progress for VC time quests
         try {
           const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
-          await questProgressTracker.trackVcTimeContribution(session.userId, guildId, session.factionId, duration);
+          await questProgressTracker.trackVcTimeContribution(session.userId, guildId, session.factionId, incrementalDuration);
         } catch (error) {
           logger.error('Error tracking quest VC time contribution:', error);
         }
       }
 
-      // Refresh TTL to keep session alive (don't modify session data)
-      await sessionManager.refreshSessionTTL(session.userId, guildId);
+      // Update lastSavedDuration to current total (prevents double-counting next save)
+      const currentTotalDuration = sessionManager.calculateDuration(session);
+      await sessionManager.updateLastSavedDuration(session.userId, guildId, currentTotalDuration);
 
       logger.debug(
-        `Incremental save for user ${session.userId}: Duration ${Math.floor(duration / 1000)}s, Coins: ${coinsEarned}${session.factionId ? `, Faction: ${session.factionId}` : ''}`
+        `Incremental save for user ${session.userId}: Duration ${Math.floor(incrementalDuration / 1000)}s, Coins: ${coinsEarned}${session.factionId ? `, Faction: ${session.factionId}` : ''}`
       );
     } catch (error) {
       logger.error(`Failed to save session incrementally for user ${session.userId}:`, error);
