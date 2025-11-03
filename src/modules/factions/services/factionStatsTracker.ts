@@ -1,5 +1,6 @@
 import { database } from '../../../database/client';
 import { memberHistoryManager } from './memberHistoryManager';
+import { factionXpService } from './factionXpService';
 import logger from '../../../core/logger';
 
 /**
@@ -9,6 +10,7 @@ import logger from '../../../core/logger';
 export class FactionStatsTracker {
   /**
    * Update faction VC time and member history when user spends time in faction VC
+   * Accumulates VC time in pendingVcXp for batched XP conversion
    */
   async updateFactionVcTime(
     factionId: string,
@@ -17,13 +19,14 @@ export class FactionStatsTracker {
     vcTimeToAdd: number
   ): Promise<void> {
     try {
-      // Update faction's total VC time
+      // Update faction's total VC time and accumulate for XP conversion
       await database.factions.updateOne(
         { id: factionId, guildId },
         {
           $inc: {
             totalFactionVcTime: vcTimeToAdd,
             totalVcTime: vcTimeToAdd, // Also update general total
+            pendingVcXp: vcTimeToAdd, // Accumulate for batched XP conversion
           },
           $set: {
             updatedAt: new Date(),
@@ -51,6 +54,28 @@ export class FactionStatsTracker {
       logger.debug(`Updated faction VC time: ${factionId}, user: ${userId}, time: ${vcTimeToAdd}ms`);
     } catch (error) {
       logger.error('Error updating faction VC time:', error);
+    }
+  }
+
+  /**
+   * Process pending VC XP conversion for all factions
+   * Called periodically to convert accumulated VC time to XP (batched for efficiency)
+   */
+  async processPendingVcXpForAllFactions(guildId: string): Promise<void> {
+    try {
+      // Get all active factions
+      const factions = await database.factions.find({ guildId, disbanded: { $ne: true } }).toArray();
+
+      for (const faction of factions) {
+        if (faction.pendingVcXp && faction.pendingVcXp >= 3600000) {
+          // At least 1 hour accumulated, convert to XP
+          await factionXpService.processPendingVcXp(faction.id, guildId);
+        }
+      }
+
+      logger.debug(`Processed pending VC XP for ${factions.length} factions`);
+    } catch (error) {
+      logger.error('Error processing pending VC XP for all factions:', error);
     }
   }
 

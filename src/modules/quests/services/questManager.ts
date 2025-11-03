@@ -34,6 +34,7 @@ export class QuestManager {
         durationHours: templateData.durationHours,
         acceptanceWindowHours: 3, // Default 3 hours
         treasuryReward: templateData.treasuryReward,
+        questXp: templateData.questXp || 500, // Default 500 XP
         topContributorRewards: {
           first: templateData.firstPlaceReward,
           second: templateData.secondPlaceReward,

@@ -56,6 +56,19 @@ export class UpkeepManager {
   }
 
   /**
+   * Calculate scaling upkeep cost based on member count
+   * Base cost: 1000
+   * Multiplier: 1.05 per member above 5
+   * Formula: 1000 * (1.05 ^ Math.max(0, memberCount - 5))
+   */
+  calculateUpkeepCost(memberCount: number): number {
+    const BASE_COST = 1000;
+    const MULTIPLIER = 1.05;
+    const membersAboveBase = Math.max(0, memberCount - 5);
+    return Math.floor(BASE_COST * Math.pow(MULTIPLIER, membersAboveBase));
+  }
+
+  /**
    * Process upkeep for a single faction
    */
   async processFactionUpkeep(
@@ -74,8 +87,12 @@ export class UpkeepManager {
         };
       }
 
+      // Calculate scaling upkeep cost based on current member count
+      const memberCount = faction.members.length;
+      const calculatedUpkeepCost = this.calculateUpkeepCost(memberCount);
+
       // Check if faction has sufficient funds for upkeep
-      if (faction.treasury < faction.upkeepAmount) {
+      if (faction.treasury < calculatedUpkeepCost) {
         // Insufficient funds - disband faction
         logger.info(
           `Faction ${faction.name} (${factionId}) has insufficient funds for upkeep. Disbanding...`
@@ -112,12 +129,13 @@ export class UpkeepManager {
         }
       }
 
-      // Deduct upkeep cost from treasury
+      // Deduct upkeep cost from treasury and update upkeepAmount field
       const updateResult = await database.factions.updateOne(
         { id: factionId, guildId },
         {
-          $inc: { treasury: -faction.upkeepAmount },
+          $inc: { treasury: -calculatedUpkeepCost },
           $set: {
+            upkeepAmount: calculatedUpkeepCost,
             nextUpkeepDate: this.calculateNextUpkeepDate(),
             updatedAt: new Date(),
           },
@@ -132,14 +150,14 @@ export class UpkeepManager {
         };
       }
 
-      const newBalance = faction.treasury - faction.upkeepAmount;
+      const newBalance = faction.treasury - calculatedUpkeepCost;
 
       logger.info(
-        `Processed upkeep for faction ${faction.name} (${factionId}): -${faction.upkeepAmount} coins. New balance: ${newBalance} coins`
+        `Processed upkeep for faction ${faction.name} (${factionId}): -${calculatedUpkeepCost} coins (${memberCount} members). New balance: ${newBalance} coins`
       );
 
       // Check if treasury is low (less than 3 days worth of upkeep)
-      const daysRemaining = Math.floor(newBalance / faction.upkeepAmount);
+      const daysRemaining = Math.floor(newBalance / calculatedUpkeepCost);
       if (daysRemaining <= 3 && daysRemaining > 0) {
         await factionAnnouncementService.sendLowTreasuryWarning(
           client,

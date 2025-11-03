@@ -1,5 +1,6 @@
 import { database } from '../../../database/client';
 import { factionManager } from './factionManager';
+import { factionLedgerService } from './factionLedgerService';
 import { TreasuryOperationResult } from '../types';
 import logger from '../../../core/logger';
 
@@ -117,6 +118,17 @@ export class TreasuryManager {
       });
 
       const newTreasuryBalance = faction.treasury + amount;
+
+      // Add ledger entry
+      await factionLedgerService.addLedgerEntry(
+        factionId,
+        guildId,
+        userId,
+        user.username,
+        'deposit',
+        amount,
+        newTreasuryBalance
+      );
 
       logger.info(
         `User ${userId} deposited ${amount} coins to faction ${factionId}. New treasury: ${newTreasuryBalance}`

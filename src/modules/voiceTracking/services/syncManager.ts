@@ -104,6 +104,14 @@ export class SyncManager {
         logger.error(`Failed to sync sessions for guild ${guild.id}:`, error);
       }
 
+      // Process pending VC XP conversions for factions
+      try {
+        const { factionStatsTracker } = await import('../../factions/services/factionStatsTracker');
+        await factionStatsTracker.processPendingVcXpForAllFactions(guild.id);
+      } catch (error) {
+        logger.error('Error processing pending VC XP:', error);
+      }
+
       logger.info(
         `Periodic sync complete: ${totalSynced} sessions synced, ${totalCleaned} stale sessions cleaned`
       );

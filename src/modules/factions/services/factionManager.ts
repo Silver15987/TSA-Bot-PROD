@@ -42,22 +42,26 @@ export class FactionManager {
         totalDeposited: initialDeposit,
         totalWithdrawn: 0,
         nextUpkeepDate,
-        upkeepAmount: config.factions.dailyUpkeepCost,
+        upkeepAmount: 1000, // Base upkeep cost (will scale with member count during upkeep processing)
         totalVcTime: 0,
         level: 1,
-        totalFactionVcTime: 0, // NEW: Track faction VC time
-        totalMessages: 0, // NEW: Track faction messages
+        totalFactionVcTime: 0,
+        totalMessages: 0,
+        xp: 0, // Initialize XP
+        pendingVcXp: 0, // Initialize pending VC XP accumulator
+        membersWhoGaveXp: [ownerId], // Owner gets XP credit
+        ledger: [], // Initialize empty ledger
         dailyQuestsCompleted: 0,
         weeklyQuestsCompleted: 0,
         warVictories: 0,
         warLosses: 0,
         warDraws: 0,
-        disbanded: false, // NEW: Not disbanded
-        disbandedAt: null, // NEW: No disband date
-        disbandedReason: null, // NEW: No disband reason
-        totalMembersEver: 1, // NEW: Owner is first member
-        peakMemberCount: 1, // NEW: Start with 1 member
-        memberHistory: [], // NEW: Empty history (will be added when owner joins)
+        disbanded: false,
+        disbandedAt: null,
+        disbandedReason: null,
+        totalMembersEver: 1,
+        peakMemberCount: 1,
+        memberHistory: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };

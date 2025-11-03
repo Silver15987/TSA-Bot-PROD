@@ -64,6 +64,20 @@ export interface UserDocument {
 }
 
 /**
+ * Faction Ledger Entry Schema
+ * Tracks individual deposit/withdrawal transactions for a faction
+ */
+export interface FactionLedgerEntry {
+  id: string;
+  userId: string;
+  username: string;
+  type: 'deposit' | 'withdraw';
+  amount: number;
+  balanceAfter: number; // Faction treasury balance after this transaction
+  createdAt: Date;
+}
+
+/**
  * Faction Document Schema
  */
 export interface FactionDocument {
@@ -94,6 +108,14 @@ export interface FactionDocument {
   level: number; // Faction level (future: unlock perks)
   totalFactionVcTime: number; // Total time spent in faction VC specifically
   totalMessages: number; // Total messages in faction VC text channel
+
+  // XP & Leveling System
+  xp: number; // Current faction XP
+  pendingVcXp: number; // Accumulated VC time (ms) pending XP conversion (batched updates)
+  membersWhoGaveXp: string[]; // User IDs who have already given XP on join (prevents rejoins from giving XP)
+
+  // Ledger
+  ledger: FactionLedgerEntry[]; // Deposit/withdrawal transaction history (limited to last 100 entries)
 
   // Quest & War stats
   dailyQuestsCompleted: number;
@@ -149,6 +171,7 @@ export interface QuestDocument {
 
   // Rewards
   treasuryReward: number; // Coins to faction treasury
+  questXp: number; // XP awarded to faction on completion (default: 500)
   topContributorRewards: {
     first: number;
     second: number;

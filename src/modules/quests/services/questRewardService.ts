@@ -2,6 +2,7 @@ import { database } from '../../../database/client';
 import { QuestDocument, FactionDocument } from '../../../types/database';
 import { Client, EmbedBuilder, TextChannel, NewsChannel } from 'discord.js';
 import { factionManager } from '../../factions/services/factionManager';
+import { factionXpService } from '../../factions/services/factionXpService';
 import { configManager } from '../../../core/configManager';
 import { QuestRewardCalculation, QuestContributor } from '../types';
 import { formatQuestGoal, formatQuestProgress, getRankEmoji } from '../utils/questFormatters';
@@ -108,6 +109,21 @@ export class QuestRewardService {
         `Added ${quest.treasuryReward} coins to faction ${faction.name} treasury from quest reward`
       );
 
+      // Award XP to faction (default 500, configurable per quest)
+      const questXp = quest.questXp || 500;
+      const xpResult = await factionXpService.addXp(
+        quest.factionId,
+        guildId,
+        questXp,
+        'quest_completion'
+      );
+
+      if (xpResult.success && xpResult.leveledUp) {
+        logger.info(
+          `Faction ${faction.name} (${quest.factionId}) leveled up to ${xpResult.newLevel} from quest completion!`
+        );
+      }
+
       // Distribute individual rewards
       for (const calc of rewardCalculations) {
         await this.distributeIndividualReward(calc.userId, guildId, calc.reward, quest.id);
@@ -123,6 +139,7 @@ export class QuestRewardService {
       logger.info(`  - Quest: "${quest.name}"`);
       logger.info(`  - Faction: ${faction.name} (${faction.id})`);
       logger.info(`  - Treasury: +${quest.treasuryReward} coins`);
+      logger.info(`  - XP: +${questXp} XP`);
       logger.info(`  - Individual rewards: ${rewardCalculations.length} users`);
       logger.info(`Successfully distributed all rewards for quest ${quest.id}`);
 

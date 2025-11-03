@@ -4,6 +4,7 @@ import { factionManager } from './factionManager';
 import { memberHistoryManager } from './memberHistoryManager';
 import { factionStatsTracker } from './factionStatsTracker';
 import { factionAnnouncementService } from './factionAnnouncementService';
+import { factionXpService } from './factionXpService';
 import { sessionManager } from '../../voiceTracking/services/sessionManager';
 import { MemberOperationResult } from '../types';
 import { factionValidator } from '../utils/validators';
@@ -134,6 +135,33 @@ export class MemberManager {
 
       // Add to member history
       await memberHistoryManager.addMemberToHistory(factionId, guildId, userId, username);
+
+      // Award XP if this is a new member (not a rejoin)
+      const membersWhoGaveXp = faction.membersWhoGaveXp || [];
+      if (!membersWhoGaveXp.includes(userId)) {
+        // Award 100 XP for new member join
+        const xpResult = await factionXpService.addXp(
+          factionId,
+          guildId,
+          100,
+          'member_join'
+        );
+
+        // Add user to membersWhoGaveXp array atomically
+        await database.factions.updateOne(
+          { id: factionId, guildId },
+          {
+            $addToSet: { membersWhoGaveXp: userId },
+            $set: { updatedAt: new Date() },
+          }
+        );
+
+        if (xpResult.success && xpResult.leveledUp) {
+          logger.info(
+            `Faction ${faction.name} (${factionId}) leveled up to ${xpResult.newLevel} from new member join!`
+          );
+        }
+      }
 
       // Send welcome message to faction VC
       await factionAnnouncementService.sendWelcomeMessage(
