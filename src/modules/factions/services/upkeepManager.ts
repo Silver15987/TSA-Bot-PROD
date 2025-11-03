@@ -164,7 +164,7 @@ export class UpkeepManager {
           faction.channelId,
           faction.roleId,
           newBalance,
-          faction.upkeepAmount,
+          calculatedUpkeepCost, // Use calculated cost, not old upkeepAmount
           daysRemaining
         );
       }

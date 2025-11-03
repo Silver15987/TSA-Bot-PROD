@@ -2,6 +2,7 @@ import { FactionDocument } from '../../../types/database';
 import { FactionRole } from '../types';
 import { EmbedBuilder } from 'discord.js';
 import { formatDuration as sharedFormatDuration } from '../../../utils/timeFormatters';
+import { upkeepManager } from '../services/upkeepManager';
 
 /**
  * Faction Formatters
@@ -108,7 +109,7 @@ export class FactionFormatter {
         },
         {
           name: '💵 Upkeep Cost',
-          value: `${this.formatCoins(faction.upkeepAmount)} coins/day`,
+          value: `${this.formatCoins(upkeepManager.calculateUpkeepCost(faction.members.length))} coins/day`,
           inline: true,
         },
         {
