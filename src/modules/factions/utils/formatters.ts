@@ -1,4 +1,4 @@
-import { FactionDocument } from '../../../types/database';
+import { FactionDocument, FactionLedgerEntry } from '../../../types/database';
 import { FactionRole } from '../types';
 import { EmbedBuilder } from 'discord.js';
 import { formatDuration as sharedFormatDuration } from '../../../utils/timeFormatters';
@@ -239,6 +239,82 @@ export class FactionFormatter {
       .setTitle(`⚠️ ${title}`)
       .setDescription(description)
       .setColor(0xf39c12);
+  }
+
+  /**
+   * Create ledger embed showing transaction history
+   */
+  createLedgerEmbed(
+    factionName: string,
+    entries: FactionLedgerEntry[],
+    currentPage: number,
+    totalEntries: number,
+    entriesPerPage: number
+  ): EmbedBuilder {
+    const embed = new EmbedBuilder()
+      .setTitle(`📋 ${factionName} - Transaction Ledger`)
+      .setColor(0x3498db)
+      .setTimestamp();
+
+    if (entries.length === 0) {
+      embed.setDescription('No transactions found.');
+      return embed;
+    }
+
+    // Format each entry
+    const entryLines = entries.map((entry, index) => {
+      const entryNumber = (currentPage - 1) * entriesPerPage + index + 1;
+      const typeEmoji = entry.type === 'deposit' ? '⬆️' : '⬇️';
+      const typeLabel = entry.type === 'deposit' ? 'Deposit' : 'Withdrawal';
+      const amountColor = entry.type === 'deposit' ? '+' : '-';
+      
+      // Format timestamp (relative if recent, otherwise date)
+      const timeAgo = this.formatTimeAgo(entry.createdAt);
+      
+      return `${entryNumber}. ${typeEmoji} **${typeLabel}**\n` +
+        `   ${amountColor}${this.formatCoins(entry.amount)} coins by **${entry.username}**\n` +
+        `   Balance: ${this.formatCoins(entry.balanceAfter)} coins • ${timeAgo}`;
+    });
+
+    embed.setDescription(entryLines.join('\n\n'));
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalEntries / entriesPerPage);
+    if (totalPages > 1) {
+      embed.setFooter({
+        text: `Page ${currentPage} of ${totalPages} • Showing ${entries.length} of ${totalEntries} entries`,
+      });
+    } else {
+      embed.setFooter({
+        text: `Showing ${entries.length} of ${totalEntries} entries`,
+      });
+    }
+
+    return embed;
+  }
+
+  /**
+   * Format time ago (e.g., "2 hours ago", "3 days ago")
+   */
+  private formatTimeAgo(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return 'just now';
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    } else if (diffDays < 7) {
+      return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
   }
 }
 

@@ -5,6 +5,7 @@ import { factionManager } from '../services/factionManager';
 import { discordResourceManager } from '../services/discordResourceManager';
 import { factionValidator } from '../utils/validators';
 import { factionFormatter } from '../utils/formatters';
+import { factionLedgerService } from '../services/factionLedgerService';
 import logger from '../../../core/logger';
 
 export default {
@@ -44,6 +45,24 @@ export default {
       subcommand
         .setName('list')
         .setDescription('List all factions in the server')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('ledger')
+        .setDescription('View faction transaction history (deposits/withdrawals)')
+        .addStringOption(option =>
+          option
+            .setName('name')
+            .setDescription('Faction name (default: your faction)')
+            .setRequired(false)
+        )
+        .addIntegerOption(option =>
+          option
+            .setName('page')
+            .setDescription('Page number (default: 1)')
+            .setRequired(false)
+            .setMinValue(1)
+        )
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -61,6 +80,9 @@ export default {
           break;
         case 'list':
           await handleList(interaction);
+          break;
+        case 'ledger':
+          await handleLedger(interaction);
           break;
         default:
           await interaction.editReply({
@@ -380,6 +402,83 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
 
   } catch (error) {
     logger.error('Error in faction list:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle /faction ledger
+ */
+async function handleLedger(interaction: ChatInputCommandInteraction): Promise<void> {
+  const factionName = interaction.options.getString('name');
+  const page = interaction.options.getInteger('page') || 1;
+  const userId = interaction.user.id;
+  const guildId = interaction.guildId!;
+
+  try {
+    let faction;
+
+    if (factionName) {
+      // Get faction by name
+      faction = await factionManager.getFactionByName(factionName, guildId);
+      if (!faction) {
+        await interaction.editReply({
+          embeds: [factionFormatter.createErrorEmbed(
+            'Faction Not Found',
+            `No faction with the name "${factionName}" exists.`
+          )],
+        });
+        return;
+      }
+    } else {
+      // Get user's current faction
+      faction = await factionManager.getUserFaction(userId, guildId);
+      if (!faction) {
+        await interaction.editReply({
+          embeds: [factionFormatter.createErrorEmbed(
+            'Not in a Faction',
+            'You are not currently in a faction. Use `/faction create` to start one or get invited to join one.'
+          )],
+        });
+        return;
+      }
+    }
+
+    // Get ledger entries (10 per page)
+    const entriesPerPage = 10;
+    const offset = (page - 1) * entriesPerPage;
+    const ledgerEntries = await factionLedgerService.getLedgerEntries(
+      faction.id,
+      guildId,
+      entriesPerPage,
+      offset
+    );
+    const totalEntries = await factionLedgerService.getLedgerCount(faction.id, guildId);
+
+    if (ledgerEntries.length === 0) {
+      await interaction.editReply({
+        embeds: [factionFormatter.createWarningEmbed(
+          'No Transactions',
+          `**${faction.name}** has no transaction history yet.\n\n` +
+          `Deposits and withdrawals will appear here once transactions are made.`
+        )],
+      });
+      return;
+    }
+
+    // Create ledger embed
+    const embed = factionFormatter.createLedgerEmbed(
+      faction.name,
+      ledgerEntries,
+      page,
+      totalEntries,
+      entriesPerPage
+    );
+
+    await interaction.editReply({ embeds: [embed] });
+
+  } catch (error) {
+    logger.error('Error in faction ledger:', error);
     throw error;
   }
 }
