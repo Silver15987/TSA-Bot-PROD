@@ -6,23 +6,41 @@ import logger from './logger';
 /**
  * Configuration Manager
  * Handles loading, caching, and reloading server-specific configuration from database
+ * Optimized for single-guild operation
  */
 class ConfigManager {
-  private configCache: Map<string, ServerConfigDocument> = new Map();
-  private loadTimestamps: Map<string, Date> = new Map();
+  private cachedConfig: ServerConfigDocument | null = null;
+  private loadTimestamp: Date | null = null;
+  private guildId: string | null = null;
 
   /**
-   * Load configuration from database for a specific guild
+   * Load configuration from database for the guild
    */
   async loadConfig(guildId: string): Promise<ServerConfigDocument> {
     try {
+      // Single guild validation: ensure we only load config for one guild
+      if (this.guildId && this.guildId !== guildId) {
+        logger.warn(
+          `Attempted to load config for guild ${guildId} but cached guild is ${this.guildId}. ` +
+          `This bot is optimized for single-guild operation. Rejecting load.`
+        );
+        throw new Error(
+          `Cannot load config for different guild. This bot is configured for guild ${this.guildId}`
+        );
+      }
+
+      // Store guildId if not already set (single guild optimization)
+      if (!this.guildId) {
+        this.guildId = guildId;
+      }
+
       let serverConfig = await database.serverConfigs.findOne({ guildId });
 
       if (!serverConfig) {
         logger.info(`No config found for guild ${guildId}, creating default config`);
         const newConfig = await this.createDefaultConfig(guildId);
-        this.configCache.set(guildId, newConfig);
-        this.loadTimestamps.set(guildId, new Date());
+        this.cachedConfig = newConfig;
+        this.loadTimestamp = new Date();
         logger.info(`Loaded config for guild ${guildId} (version ${newConfig.version})`);
         return newConfig;
       }
@@ -53,8 +71,8 @@ class ConfigManager {
         logger.info(`Migration complete for guild ${guildId} (version ${serverConfig.version})`);
       }
 
-      this.configCache.set(guildId, serverConfig);
-      this.loadTimestamps.set(guildId, new Date());
+      this.cachedConfig = serverConfig;
+      this.loadTimestamp = new Date();
 
       logger.info(`Loaded config for guild ${guildId} (version ${serverConfig.version})`);
       return serverConfig;
@@ -65,24 +83,31 @@ class ConfigManager {
   }
 
   /**
-   * Get cached configuration for a guild
+   * Get cached configuration for the guild
    * Falls back to loading if not cached
    */
-  getConfig(guildId: string): ServerConfigDocument {
-    const cached = this.configCache.get(guildId);
-
-    if (!cached) {
-      throw new Error(`Config not loaded for guild ${guildId}. Call loadConfig() first.`);
+  getConfig(guildId?: string): ServerConfigDocument {
+    if (!this.cachedConfig) {
+      const targetGuildId = guildId || this.guildId || 'unknown';
+      throw new Error(`Config not loaded for guild ${targetGuildId}. Call loadConfig() first.`);
     }
 
-    return cached;
+    // Single guild validation: ensure requested guildId matches cached guildId
+    if (guildId && guildId !== this.guildId) {
+      logger.warn(
+        `getConfig() called with guildId ${guildId} but cached guild is ${this.guildId}. ` +
+        `Returning cached config for ${this.guildId}`
+      );
+    }
+
+    return this.cachedConfig;
   }
 
   /**
    * Check if cached config exists
    */
-  hasConfig(guildId: string): boolean {
-    return this.configCache.has(guildId);
+  hasConfig(guildId?: string): boolean {
+    return this.cachedConfig !== null;
   }
 
   /**
@@ -97,9 +122,7 @@ class ConfigManager {
    * Check if config has been updated in database
    */
   async checkForUpdates(guildId: string): Promise<boolean> {
-    const cached = this.configCache.get(guildId);
-
-    if (!cached) {
+    if (!this.cachedConfig) {
       return false;
     }
 
@@ -110,7 +133,7 @@ class ConfigManager {
         return false;
       }
 
-      return latest.version > cached.version;
+      return latest.version > this.cachedConfig.version;
     } catch (error) {
       logger.error(`Failed to check for config updates for guild ${guildId}:`, error);
       return false;
@@ -237,26 +260,26 @@ class ConfigManager {
   }
 
   /**
-   * Clear cache for a guild
+   * Clear cache for the guild
    */
-  clearCache(guildId: string): void {
-    this.configCache.delete(guildId);
-    this.loadTimestamps.delete(guildId);
+  clearCache(guildId?: string): void {
+    this.cachedConfig = null;
+    this.loadTimestamp = null;
   }
 
   /**
-   * Clear all cached configs
+   * Clear all cached configs (same as clearCache for single guild)
    */
   clearAllCache(): void {
-    this.configCache.clear();
-    this.loadTimestamps.clear();
+    this.cachedConfig = null;
+    this.loadTimestamp = null;
   }
 
   /**
-   * Get all cached guild IDs
+   * Get cached guild ID
    */
-  getCachedGuilds(): string[] {
-    return Array.from(this.configCache.keys());
+  getCachedGuildId(): string | null {
+    return this.guildId;
   }
 }
 

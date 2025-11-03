@@ -46,47 +46,52 @@ export function stopQuestScheduler(): void {
 
 /**
  * Run quest scheduler logic
+ * Optimized for single-guild operation
  */
 async function runQuestScheduler(client: Client): Promise<void> {
   try {
     logger.info('Running quest scheduler...');
 
-    // Get all guilds
-    for (const guild of client.guilds.cache.values()) {
-      try {
-        // Check if config is loaded, skip if not
-        if (!configManager.hasConfig(guild.id)) {
-          logger.warn(`Quest scheduler: Config not loaded for guild ${guild.id}, skipping`);
-          continue;
-        }
+    // Get the single guild (optimized for single-guild operation)
+    const guild = client.guilds.cache.first();
+    if (!guild) {
+      logger.warn('Quest scheduler: Bot is not in any guilds, skipping');
+      return;
+    }
 
-        const config = configManager.getConfig(guild.id);
-
-        // Skip if quests config is missing or disabled
-        if (!config.quests || !config.quests.enabled) {
-          logger.debug(`Quest scheduler: Quests disabled or not configured for guild ${guild.id}`);
-          continue;
-        }
-
-        // Check quest deadlines
-        await checkQuestDeadlines(client, guild.id);
-
-        // Check acceptance deadlines
-        await checkAcceptanceDeadlines(guild.id);
-
-        // Auto-assign quests if enabled
-        if (config.quests.autoAssignEnabled) {
-          await autoAssignQuests(client, guild.id);
-        }
-
-        // Clean up expired cooldowns
-        await questCooldownManager.cleanupExpiredCooldowns();
-
-        // Send announcements for newly completed quests
-        await sendPendingAnnouncements(client, guild.id);
-      } catch (error) {
-        logger.error(`Error in quest scheduler for guild ${guild.id}:`, error);
+    try {
+      // Check if config is loaded, skip if not
+      if (!configManager.hasConfig()) {
+        logger.warn(`Quest scheduler: Config not loaded for guild ${guild.id}, skipping`);
+        return;
       }
+
+      const config = configManager.getConfig();
+
+      // Skip if quests config is missing or disabled
+      if (!config.quests || !config.quests.enabled) {
+        logger.debug(`Quest scheduler: Quests disabled or not configured for guild ${guild.id}`);
+        return;
+      }
+
+      // Check quest deadlines
+      await checkQuestDeadlines(client, guild.id);
+
+      // Check acceptance deadlines
+      await checkAcceptanceDeadlines(guild.id);
+
+      // Auto-assign quests if enabled
+      if (config.quests.autoAssignEnabled) {
+        await autoAssignQuests(client, guild.id);
+      }
+
+      // Clean up expired cooldowns
+      await questCooldownManager.cleanupExpiredCooldowns();
+
+      // Send announcements for newly completed quests
+      await sendPendingAnnouncements(client, guild.id);
+    } catch (error) {
+      logger.error(`Error in quest scheduler for guild ${guild.id}:`, error);
     }
 
     logger.info('Quest scheduler run completed');

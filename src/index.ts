@@ -128,14 +128,19 @@ async function main() {
 
     // Wait for bot to be ready before loading configs and starting services
     client.once('ready', async () => {
-      // Load configs for all guilds
-      logger.info('Loading server configurations...');
-      for (const guild of client.guilds.cache.values()) {
-        try {
-          await configManager.loadConfig(guild.id);
-        } catch (error) {
-          logger.error(`Failed to load config for guild ${guild.id}:`, error);
-        }
+      // Load config for the single guild (optimized for single-guild operation)
+      logger.info('Loading server configuration...');
+      const guild = client.guilds.cache.first();
+      if (!guild) {
+        logger.error('Bot is not in any guilds. Please add the bot to a server.');
+        return;
+      }
+
+      try {
+        await configManager.loadConfig(guild.id);
+      } catch (error) {
+        logger.error(`Failed to load config for guild ${guild.id}:`, error);
+        return;
       }
 
       // Start webhook server for config hot-reload

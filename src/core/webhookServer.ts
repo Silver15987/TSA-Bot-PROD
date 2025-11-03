@@ -44,6 +44,18 @@ export class WebhookServer {
 
         logger.info(`Received config update webhook for guild ${guildId}`);
 
+        // Validate this is the correct guild (single-guild optimization)
+        const cachedGuildId = configManager.getCachedGuildId();
+        if (cachedGuildId && cachedGuildId !== guildId) {
+          logger.warn(
+            `Webhook received config update for guild ${guildId} but bot is configured for guild ${cachedGuildId}. Rejecting.`
+          );
+          res.status(400).json({
+            error: `Invalid guildId. This bot is configured for guild ${cachedGuildId}`,
+          });
+          return;
+        }
+
         await configManager.reloadConfig(guildId);
 
         const newConfig = configManager.getConfig(guildId);
