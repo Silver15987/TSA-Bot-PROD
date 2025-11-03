@@ -18,6 +18,8 @@ import {
   getQuestStatusEmoji,
 } from '../modules/quests/utils/questFormatters';
 import { getDifficultyEmoji, getDifficultyLabel } from '../modules/quests/utils/difficultyScaler';
+import { sessionManager } from '../modules/voiceTracking/services/sessionManager';
+import { database } from '../database/client';
 import logger from '../core/logger';
 
 export default {
@@ -274,6 +276,21 @@ async function handleAccept(
     }
   );
 
+  // Reset VC session trackers for all users currently in faction VC
+  // This ensures only VC time AFTER quest acceptance counts toward the quest
+  try {
+    await sessionManager.resetLastSavedDurationForFaction(guildId, faction.id);
+    logger.info(
+      `Reset VC session trackers for faction ${faction.name} (${faction.id}) on quest acceptance`
+    );
+  } catch (error) {
+    // Log error but don't fail quest acceptance
+    logger.error(
+      `Failed to reset VC session trackers for faction ${faction.id} on quest acceptance:`,
+      error
+    );
+  }
+
   // Success embed
   const embed = new EmbedBuilder()
     .setColor('#00FF00')
@@ -446,6 +463,3 @@ async function handleHistory(
 
   await interaction.editReply({ embeds: [embed] });
 }
-
-// Import database for quest update
-import { database } from '../database/client';

@@ -264,6 +264,48 @@ export class SessionManager {
   }
 
   /**
+   * Reset lastSavedDuration for all active sessions in a faction
+   * Used when a quest is accepted to ensure only post-acceptance VC time counts
+   */
+  async resetLastSavedDurationForFaction(guildId: string, factionId: string): Promise<void> {
+    try {
+      if (!redis.isReady()) {
+        logger.error(`Cannot reset lastSavedDuration for faction ${factionId}: Redis not connected`);
+        return;
+      }
+
+      const sessions = await this.getAllActiveSessions(guildId);
+      let resetCount = 0;
+
+      for (const session of sessions) {
+        // Only reset sessions in this faction's VC
+        if (session.factionId === factionId) {
+          // Calculate current total duration
+          const currentTotalDuration = Date.now() - session.sessionStartTime;
+
+          // Update lastSavedDuration to current total
+          // This makes future incremental saves only count time AFTER now
+          await this.updateLastSavedDuration(session.userId, guildId, currentTotalDuration);
+
+          resetCount++;
+
+          logger.debug(
+            `Reset quest contribution counter for user ${session.userId} in faction ${factionId} ` +
+            `(currentDuration: ${Math.floor(currentTotalDuration / 1000)}s)`
+          );
+        }
+      }
+
+      logger.info(
+        `Reset quest contribution counters for ${resetCount} users in faction ${factionId} (guild: ${guildId})`
+      );
+    } catch (error) {
+      logger.error(`Failed to reset lastSavedDuration for faction ${factionId}:`, error);
+      // Don't re-throw - error is logged, let caller continue
+    }
+  }
+
+  /**
    * Get session key pattern for Redis
    */
   private getSessionKey(guildId: string, userId: string): string {
