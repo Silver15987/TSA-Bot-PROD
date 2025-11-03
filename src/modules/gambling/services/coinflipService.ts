@@ -65,8 +65,8 @@ export class CoinflipService {
         return null;
       }
 
-      // Flip the coin (50/50 with house edge)
-      const result = this.flipCoin(houseEdge);
+      // Flip the coin with house edge (player loses 95% of the time regardless of choice)
+      const result = this.flipCoin(userChoice, houseEdge);
       const won = result === userChoice;
 
       // Calculate winnings/losses
@@ -113,14 +113,23 @@ export class CoinflipService {
 
   /**
    * Flip the coin with house edge consideration
+   * House edge applies to player win chance, not coin outcome
+   * Player loses (1 - houseEdge) of the time regardless of choice
    */
-  private flipCoin(houseEdge: number): 'heads' | 'tails' {
-    // House edge reduces player win chance slightly
-    // Example: 2% house edge = 49% win chance instead of 50%
+  private flipCoin(userChoice: 'heads' | 'tails', houseEdge: number): 'heads' | 'tails' {
+    // Calculate player win chance (e.g., 5% win chance = 95% house edge)
+    const playerWinChance = houseEdge;
     const random = Math.random();
-    const winChance = 0.5 - houseEdge / 2;
-
-    return random < winChance ? 'heads' : 'tails';
+    
+    // If player wins (based on house edge), result matches their choice
+    // If player loses, result is opposite of their choice
+    if (random < playerWinChance) {
+      // Player wins: result matches their choice
+      return userChoice;
+    } else {
+      // Player loses: result is opposite of their choice
+      return userChoice === 'heads' ? 'tails' : 'heads';
+    }
   }
 
   /**
