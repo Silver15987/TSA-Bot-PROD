@@ -3,6 +3,7 @@ import { FactionRole } from '../types';
 import { EmbedBuilder } from 'discord.js';
 import { formatDuration as sharedFormatDuration } from '../../../utils/timeFormatters';
 import { upkeepManager } from '../services/upkeepManager';
+import { factionXpService } from '../services/factionXpService';
 
 /**
  * Faction Formatters
@@ -75,6 +76,20 @@ export class FactionFormatter {
   }
 
   /**
+   * Format XP progress for display
+   * Shows current XP and XP needed for next level
+   */
+  formatXpProgress(currentXp: number, currentLevel: number): string {
+    const xpForNextLevel = factionXpService.calculateXpForNextLevel(currentXp);
+    
+    if (currentLevel >= 100) {
+      return `Max Level (${currentXp.toLocaleString()} XP)`;
+    }
+    
+    return `${currentXp.toLocaleString()} XP\n${xpForNextLevel.toLocaleString()} XP to next level`;
+  }
+
+  /**
    * Create faction info embed
    */
   createFactionInfoEmbed(faction: FactionDocument, ownerUsername: string): EmbedBuilder {
@@ -95,6 +110,11 @@ export class FactionFormatter {
         {
           name: '📊 Level',
           value: `Level ${faction.level}`,
+          inline: true,
+        },
+        {
+          name: '⭐ XP Progress',
+          value: this.formatXpProgress(faction.xp, faction.level),
           inline: true,
         },
         {
