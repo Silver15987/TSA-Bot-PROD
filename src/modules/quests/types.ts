@@ -69,6 +69,7 @@ export interface QuestTemplateData {
   baseGoal: number;
   durationHours: number;
   treasuryReward: number;
+  questXp?: number; // Optional: XP awarded to faction on completion (defaults to 500)
   firstPlaceReward: number;
   secondPlaceReward: number;
   thirdPlaceReward: number;

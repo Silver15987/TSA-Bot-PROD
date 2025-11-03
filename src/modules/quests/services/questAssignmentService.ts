@@ -104,6 +104,7 @@ export class QuestAssignmentService {
         factionId, // Assign to faction
         difficulty, // Set difficulty
         goal: scaledGoal, // Use scaled goal
+        questXp: templateData.questXp || 500, // Ensure questXp is set (default 500 for old templates)
         currentProgress: 0,
         status: 'offered',
         isTemplate: false,
@@ -221,6 +222,7 @@ export class QuestAssignmentService {
         factionId,
         difficulty,
         goal: scaledGoal,
+        questXp: templateData.questXp || 500, // Ensure questXp is set (default 500 for old templates)
         currentProgress: 0,
         status: 'offered',
         isTemplate: false,

@@ -1,5 +1,4 @@
 import { database } from '../../../database/client';
-import { FactionDocument } from '../../../types/database';
 import logger from '../../../core/logger';
 
 /**
@@ -123,7 +122,7 @@ export class FactionXpService {
         return { success: false };
       }
 
-      const newXp = factionAfter.xp;
+      const newXp = factionAfter.xp || 0;
       const newLevel = this.calculateLevel(newXp);
 
       // Check if level increased
@@ -217,7 +216,8 @@ export class FactionXpService {
       const updatedFaction = await database.factions.findOne({ id: factionId, guildId });
       if (updatedFaction) {
         const oldLevel = faction.level || 1;
-        const newLevel = this.calculateLevel(updatedFaction.xp);
+        const newXp = updatedFaction.xp || 0;
+        const newLevel = this.calculateLevel(newXp);
 
         if (newLevel > oldLevel) {
           await database.factions.updateOne(

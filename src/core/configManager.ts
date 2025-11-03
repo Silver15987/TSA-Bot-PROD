@@ -10,7 +10,6 @@ import logger from './logger';
  */
 class ConfigManager {
   private cachedConfig: ServerConfigDocument | null = null;
-  private loadTimestamp: Date | null = null;
   private guildId: string | null = null;
 
   /**
@@ -40,7 +39,6 @@ class ConfigManager {
         logger.info(`No config found for guild ${guildId}, creating default config`);
         const newConfig = await this.createDefaultConfig(guildId);
         this.cachedConfig = newConfig;
-        this.loadTimestamp = new Date();
         logger.info(`Loaded config for guild ${guildId} (version ${newConfig.version})`);
         return newConfig;
       }
@@ -72,7 +70,6 @@ class ConfigManager {
       }
 
       this.cachedConfig = serverConfig;
-      this.loadTimestamp = new Date();
 
       logger.info(`Loaded config for guild ${guildId} (version ${serverConfig.version})`);
       return serverConfig;
@@ -106,7 +103,7 @@ class ConfigManager {
   /**
    * Check if cached config exists
    */
-  hasConfig(guildId?: string): boolean {
+  hasConfig(_guildId?: string): boolean {
     return this.cachedConfig !== null;
   }
 
@@ -262,9 +259,8 @@ class ConfigManager {
   /**
    * Clear cache for the guild
    */
-  clearCache(guildId?: string): void {
+  clearCache(_guildId?: string): void {
     this.cachedConfig = null;
-    this.loadTimestamp = null;
   }
 
   /**
@@ -272,7 +268,6 @@ class ConfigManager {
    */
   clearAllCache(): void {
     this.cachedConfig = null;
-    this.loadTimestamp = null;
   }
 
   /**

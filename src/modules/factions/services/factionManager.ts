@@ -1,6 +1,5 @@
 import { database } from '../../../database/client';
 import { FactionDocument } from '../../../types/database';
-import { configManager } from '../../../core/configManager';
 import logger from '../../../core/logger';
 import { FactionCreationResult } from '../types';
 
@@ -21,8 +20,6 @@ export class FactionManager {
     initialDeposit: number
   ): Promise<FactionCreationResult> {
     try {
-      const config = configManager.getConfig(guildId);
-
       // Generate unique faction ID
       const factionId = this.generateFactionId();
 
