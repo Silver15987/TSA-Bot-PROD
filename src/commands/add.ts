@@ -9,7 +9,6 @@ export default {
   data: new SlashCommandBuilder()
     .setName('add')
     .setDescription('Add coins to a user (Staff only)')
-    .setDefaultMemberPermissions(0) // Hide from non-staff
     .addUserOption(option =>
       option
         .setName('user')

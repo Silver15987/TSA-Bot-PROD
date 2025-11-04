@@ -9,7 +9,6 @@ export default {
   data: new SlashCommandBuilder()
     .setName('remove')
     .setDescription('Remove coins from a user (Staff only)')
-    .setDefaultMemberPermissions(0) // Hide from non-staff
     .addUserOption(option =>
       option
         .setName('user')
