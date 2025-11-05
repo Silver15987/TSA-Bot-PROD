@@ -207,6 +207,12 @@ export const RedisKeys = {
 
   // Multiplier Cache: multiplier:total:{userId}:{guildId}
   totalMultiplier: (userId: string, guildId: string) => `multiplier:total:${userId}:${guildId}`,
+
+  // Status Cache: status:user:{userId}:{guildId}
+  userStatuses: (userId: string, guildId: string) => `status:user:${userId}:${guildId}`,
+
+  // Items Cache: items:user:{userId}:{guildId}
+  userItems: (userId: string, guildId: string) => `items:user:${userId}:${guildId}`,
 };
 
 // Export singleton instance

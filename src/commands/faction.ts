@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, Guild, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, Guild, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, EmbedBuilder } from 'discord.js';
 import { database } from '../database/client';
 import { configManager } from '../core/configManager';
 import { factionManager } from '../modules/factions/services/factionManager';
@@ -144,6 +144,11 @@ export default {
             .setRequired(false)
             .setMinValue(1)
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('status')
+        .setDescription('View your faction\'s status and multiplier information')
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -188,6 +193,9 @@ export default {
           break;
         case 'ledger':
           await handleLedger(interaction);
+          break;
+        case 'status':
+          await handleStatus(interaction);
           break;
         default:
           await interaction.editReply({
@@ -1329,5 +1337,89 @@ async function handleLedger(interaction: ChatInputCommandInteraction): Promise<v
   } catch (error) {
     logger.error('Error in faction ledger:', error);
     throw error;
+  }
+}
+
+/**
+ * Handle /faction status
+ */
+async function handleStatus(interaction: ChatInputCommandInteraction): Promise<void> {
+  const userId = interaction.user.id;
+  const guildId = interaction.guildId!;
+
+  try {
+    // Get user's faction
+    const user = await database.users.findOne({ id: userId, guildId });
+    if (!user || !user.currentFaction) {
+      await interaction.editReply({
+        content: '❌ You are not in a faction.\n' +
+          'Join a faction or create one with `/faction create` to view faction status.',
+      });
+      return;
+    }
+
+    // Get faction data
+    const faction = await database.factions.findOne({ id: user.currentFaction, guildId });
+    if (!faction) {
+      await interaction.editReply({
+        content: '❌ Faction not found. This shouldn\'t happen!',
+      });
+      return;
+    }
+
+    // Get faction multiplier
+    const factionMultiplier = faction.coinMultiplier ?? 1.0;
+
+    // Get member count
+    const memberCount = faction.members?.length ?? 0;
+
+    // Build embed
+    const embedColor = factionMultiplier > 1.0 ? 0x00ff00 : factionMultiplier < 1.0 ? 0xff0000 : 0x3498db;
+    
+    const embed = new EmbedBuilder()
+      .setColor(embedColor)
+      .setTitle(`🏴 Faction Status: ${faction.name}`)
+      .setTimestamp();
+
+    // Faction information
+    embed.addFields(
+      {
+        name: '📊 Faction Information',
+        value:
+          `Level: ${faction.level ?? 1} 🎖️\n` +
+          `Members: ${memberCount} 👥\n` +
+          `Treasury: ${faction.treasury.toLocaleString()} 💰\n` +
+          `XP: ${faction.xp.toLocaleString()} ⭐`,
+        inline: false,
+      },
+      {
+        name: '💰 Coin Multiplier',
+        value:
+          `Faction Multiplier: ${factionMultiplier.toFixed(2)}x\n\n` +
+          `This multiplier applies to all faction members' coin earnings ` +
+          `(VC time, quests, admin additions).`,
+        inline: false,
+      }
+    );
+
+    // Recent activity (if available)
+    // Note: This could be enhanced with actual quest/activity stats
+    embed.addFields({
+      name: '📈 Recent Activity',
+      value:
+        `Daily Quests Completed: ${faction.dailyQuestsCompleted ?? 0}\n` +
+        `Weekly Quests Completed: ${faction.weeklyQuestsCompleted ?? 0}\n` +
+        `Total VC Time: ${faction.totalVcTime ? Math.floor(faction.totalVcTime / (1000 * 60 * 60)) : 0} hours`,
+      inline: false,
+    });
+
+    embed.setFooter({ text: `Requested by ${interaction.user.username}` });
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    logger.error('Error in faction status:', error);
+    await interaction.editReply({
+      content: '❌ An error occurred while fetching faction status. Please try again.',
+    });
   }
 }

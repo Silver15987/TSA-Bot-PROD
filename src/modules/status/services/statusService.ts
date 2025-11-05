@@ -44,7 +44,7 @@ export class StatusService {
       }
 
       // Invalidate caches
-      await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+      await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
       logger.info(`Added status ${statusEntry.name} to user ${userId}`);
       return { success: true };
@@ -82,7 +82,7 @@ export class StatusService {
       }
 
       // Invalidate caches
-      await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+      await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
       logger.info(`Removed status ${statusId} from user ${userId}`);
       return { success: true };
@@ -96,12 +96,21 @@ export class StatusService {
   }
 
   /**
-   * Get all active statuses for a user
+   * Get all active statuses for a user (with Redis caching)
    */
   async getUserStatuses(userId: string, guildId: string): Promise<StatusEntry[]> {
     try {
+      // Try Redis cache first
+      const cached = await multiplierCacheService.getUserStatusesFromCache(userId, guildId);
+      if (cached !== null) {
+        return cached;
+      }
+
+      // Cache miss - query database
       const user = await database.users.findOne({ id: userId, guildId });
       if (!user || !user.statuses) {
+        // Cache empty result
+        await multiplierCacheService.setUserStatusesCache(userId, guildId, []);
         return [];
       }
 
@@ -115,6 +124,9 @@ export class StatusService {
       if (activeStatuses.length !== user.statuses.length) {
         await this.cleanupExpiredStatuses(userId, guildId);
       }
+
+      // Cache the result
+      await multiplierCacheService.setUserStatusesCache(userId, guildId, activeStatuses);
 
       return activeStatuses;
     } catch (error) {
@@ -158,7 +170,7 @@ export class StatusService {
       }
 
       // Invalidate caches
-      await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+      await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
       logger.info(`Added item ${itemEntry.itemId} to user ${userId}`);
       return { success: true };
@@ -196,7 +208,7 @@ export class StatusService {
       }
 
       // Invalidate caches
-      await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+      await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
       logger.info(`Removed item ${itemId} from user ${userId}`);
       return { success: true };
@@ -210,12 +222,21 @@ export class StatusService {
   }
 
   /**
-   * Get all active items for a user
+   * Get all active items for a user (with Redis caching)
    */
   async getUserItems(userId: string, guildId: string): Promise<ItemEntry[]> {
     try {
+      // Try Redis cache first
+      const cached = await multiplierCacheService.getUserItemsFromCache(userId, guildId);
+      if (cached !== null) {
+        return cached;
+      }
+
+      // Cache miss - query database
       const user = await database.users.findOne({ id: userId, guildId });
       if (!user || !user.items) {
+        // Cache empty result
+        await multiplierCacheService.setUserItemsCache(userId, guildId, []);
         return [];
       }
 
@@ -229,6 +250,9 @@ export class StatusService {
       if (activeItems.length !== user.items.length) {
         await this.cleanupExpiredItems(userId, guildId);
       }
+
+      // Cache the result
+      await multiplierCacheService.setUserItemsCache(userId, guildId, activeItems);
 
       return activeItems;
     } catch (error) {
@@ -264,7 +288,7 @@ export class StatusService {
         );
 
         // Invalidate caches
-        await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+        await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
         logger.debug(`Cleaned up ${user.statuses.length - activeStatuses.length} expired statuses for user ${userId}`);
       }
@@ -300,7 +324,7 @@ export class StatusService {
         );
 
         // Invalidate caches
-        await multiplierCacheService.invalidateAllUserMultiplierCaches(userId, guildId);
+        await multiplierCacheService.invalidateAllUserStatusCaches(userId, guildId);
 
         logger.debug(`Cleaned up ${user.items.length - activeItems.length} expired items for user ${userId}`);
       }
