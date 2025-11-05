@@ -206,3 +206,4 @@ function createErrorEmbed(title: string, description: string): EmbedBuilder {
     .setColor(0xe74c3c);
 }
 
+
