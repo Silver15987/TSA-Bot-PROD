@@ -2,6 +2,7 @@ import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from '
 import { database } from '../database/client';
 import { statusService } from '../modules/status/services/statusService';
 import { multiplierCalculator } from '../modules/status/services/multiplierCalculator';
+import { roleStatusManager } from '../modules/roles/services/roleStatusManager';
 import {
   formatMultiplier,
   getMultiplierColor,
@@ -9,6 +10,7 @@ import {
   formatStatusList,
   formatItemList,
 } from '../modules/status/utils/statusFormatters';
+import { StatusEntry } from '../types/database';
 import logger from '../core/logger';
 
 export default {
@@ -35,8 +37,82 @@ export default {
       }
 
       // Get statuses and items (with Redis caching)
-      const statuses = await statusService.getUserStatuses(userId, guildId);
+      const regularStatuses = await statusService.getUserStatuses(userId, guildId);
       const items = await statusService.getUserItems(userId, guildId);
+
+      // Get role-based statuses (curses, blessings, etc.)
+      const roleStatuses = await roleStatusManager.getActiveStatusesForUser(userId, guildId);
+      
+      // Convert role statuses to StatusEntry format
+      const convertedRoleStatuses: StatusEntry[] = roleStatuses.map(roleStatus => {
+        let name = '';
+        let type: 'buff' | 'debuff' | 'status' = 'status';
+        let multiplier = 1.0;
+
+        switch (roleStatus.effectType) {
+          case 'curse':
+            type = 'debuff';
+            const curseType = roleStatus.metadata?.curseType || 'unknown';
+            const curseAmount = roleStatus.metadata?.amount || 0;
+            if (curseType === 'earning_rate') {
+              name = `Witch's Curse - ${curseAmount}% Earning Reduction`;
+              multiplier = 1.0 - (curseAmount / 100); // e.g., 0.8 for 20% reduction
+            } else if (curseType === 'instant_loss') {
+              name = `Witch's Curse - Instant Loss`;
+              multiplier = 1.0; // Instant loss doesn't affect multiplier
+            } else {
+              name = `Witch's Curse`;
+            }
+            break;
+          case 'blessing':
+            type = 'buff';
+            const blessingBonus = roleStatus.metadata?.coinGainBonus || 0;
+            name = `Enchanter's Blessing (+${blessingBonus}% coin gain)`;
+            multiplier = 1.0 + (blessingBonus / 100); // e.g., 1.2 for 20% bonus
+            break;
+          case 'wanted':
+            type = 'debuff';
+            name = 'Wanted Status';
+            multiplier = 0.1; // 10% coin gain (as per requirements)
+            break;
+          case 'protection':
+            type = 'status';
+            name = 'Guard Protection';
+            multiplier = 1.0;
+            break;
+          case 'investment':
+            type = 'status';
+            name = 'Merchant Investment';
+            multiplier = 1.0;
+            break;
+          case 'market_manipulation':
+            type = 'status';
+            const effect = roleStatus.metadata?.effect || 0;
+            name = `Market Manipulation (${effect > 0 ? '+' : ''}${effect}%)`;
+            multiplier = 1.0 + (effect / 100);
+            break;
+          default:
+            name = `${roleStatus.roleType} ${roleStatus.effectType}`;
+        }
+
+        return {
+          id: roleStatus.id,
+          type,
+          name,
+          multiplier,
+          expiresAt: roleStatus.expiresAt,
+          source: 'role',
+          metadata: {
+            ...roleStatus.metadata,
+            roleType: roleStatus.roleType,
+            effectType: roleStatus.effectType,
+            casterId: roleStatus.userId,
+          },
+        };
+      });
+
+      // Merge regular statuses with role statuses
+      const statuses = [...regularStatuses, ...convertedRoleStatuses];
 
       // Calculate multipliers
       const multiplierEnabled = user.multiplierEnabled ?? true;
