@@ -198,6 +198,15 @@ export const RedisKeys = {
   // War Progress: war_progress:{warId}:{factionId}
   warProgress: (warId: string, factionId: string) =>
     `war_progress:${warId}:${factionId}`,
+
+  // Multiplier Cache: multiplier:user:{userId}:{guildId}
+  userMultiplier: (userId: string, guildId: string) => `multiplier:user:${userId}:${guildId}`,
+
+  // Multiplier Cache: multiplier:faction:{factionId}:{guildId}
+  factionMultiplier: (factionId: string, guildId: string) => `multiplier:faction:${factionId}:${guildId}`,
+
+  // Multiplier Cache: multiplier:total:{userId}:{guildId}
+  totalMultiplier: (userId: string, guildId: string) => `multiplier:total:${userId}:${guildId}`,
 };
 
 // Export singleton instance

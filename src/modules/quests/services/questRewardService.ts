@@ -163,6 +163,17 @@ export class QuestRewardService {
     questId: string
   ): Promise<void> {
     try {
+      // Apply multiplier to individual rewards
+      let finalAmount = amount;
+      try {
+        const { multiplierCalculator } = await import('../../status/services/multiplierCalculator');
+        const multiplier = await multiplierCalculator.calculateTotalMultiplier(userId, guildId);
+        finalAmount = Math.floor(amount * multiplier);
+      } catch (error) {
+        logger.warn(`Failed to apply multiplier to quest reward for user ${userId}, using base amount:`, error);
+        // Continue with base amount if multiplier fails
+      }
+
       // Get or create user document
       let user = await database.users.findOne({ id: userId, guildId });
 
@@ -178,11 +189,11 @@ export class QuestRewardService {
           dailyVcTime: 0,
           weeklyVcTime: 0,
           monthlyVcTime: 0,
-          coins: amount,
-          totalCoinsEarned: amount,
-          dailyCoinsEarned: amount,
-          weeklyCoinsEarned: amount,
-          monthlyCoinsEarned: amount,
+          coins: finalAmount,
+          totalCoinsEarned: finalAmount,
+          dailyCoinsEarned: finalAmount,
+          weeklyCoinsEarned: finalAmount,
+          monthlyCoinsEarned: finalAmount,
           lastActiveDate: new Date(),
           currentStreak: 0,
           longestStreak: 0,
@@ -212,11 +223,11 @@ export class QuestRewardService {
           { id: userId, guildId },
           {
             $inc: {
-              coins: amount,
-              totalCoinsEarned: amount,
-              dailyCoinsEarned: amount,
-              weeklyCoinsEarned: amount,
-              monthlyCoinsEarned: amount,
+              coins: finalAmount,
+              totalCoinsEarned: finalAmount,
+              dailyCoinsEarned: finalAmount,
+              weeklyCoinsEarned: finalAmount,
+              monthlyCoinsEarned: finalAmount,
               questsCompleted: 1,
             },
             $set: { updatedAt: new Date() },
@@ -235,16 +246,18 @@ export class QuestRewardService {
         id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
         userId,
         type: 'quest_reward',
-        amount,
+        amount: finalAmount,
         balanceAfter: updatedUser.coins,
         metadata: {
           questId,
           source: 'quest_completion',
+          baseAmount: amount,
+          multiplierApplied: finalAmount !== amount,
         },
         createdAt: new Date(),
       });
 
-      logger.info(`Distributed ${amount} coins to user ${userId} from quest ${questId}`);
+      logger.info(`Distributed ${finalAmount} coins (base: ${amount}) to user ${userId} from quest ${questId}`);
     } catch (error) {
       logger.error(`Error distributing individual reward to user ${userId}:`, error);
       throw error; // Propagate error to caller

@@ -35,7 +35,7 @@ export class DatabaseUpdater {
         return;
       }
 
-      const coinsEarned = coinCalculator.calculateCoins(duration, guildId);
+      const coinsEarned = await coinCalculator.calculateCoins(duration, guildId, userId);
 
       await this.saveSessionData(userId, guildId, duration, coinsEarned, session, username);
 
@@ -85,7 +85,7 @@ export class DatabaseUpdater {
       // CRITICAL: Use incremental duration to prevent double-counting
       // calculateIncrementalDuration returns only NEW time since last save
       const incrementalDuration = sessionManager.calculateIncrementalDuration(session);
-      const coinsEarned = coinCalculator.calculateCoins(incrementalDuration, guildId);
+      const coinsEarned = await coinCalculator.calculateCoins(incrementalDuration, guildId, session.userId);
 
       await this.saveSessionData(session.userId, guildId, incrementalDuration, coinsEarned, session, username);
 
@@ -233,6 +233,10 @@ export class DatabaseUpdater {
             lastDailyReset: today,
             lastWeeklyReset: today,
             lastMonthlyReset: today,
+            // Initialize status and multiplier fields
+            statuses: [],
+            items: [],
+            multiplierEnabled: true,
           },
         },
         { upsert: true }

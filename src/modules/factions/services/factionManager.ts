@@ -38,6 +38,7 @@ export class FactionManager {
         treasury: initialDeposit,
         totalDeposited: initialDeposit,
         totalWithdrawn: 0,
+        coinMultiplier: 1.0, // Default multiplier (no effect)
         nextUpkeepDate,
         upkeepAmount: 1000, // Base upkeep cost (will scale with member count during upkeep processing)
         totalVcTime: 0,
@@ -64,6 +65,15 @@ export class FactionManager {
       };
 
       await database.factions.insertOne(factionDoc);
+
+      // Cache faction multiplier in Redis
+      try {
+        const { multiplierCacheService } = await import('../../status/services/multiplierCacheService');
+        await multiplierCacheService.setFactionMultiplierCache(factionId, guildId, 1.0);
+      } catch (error) {
+        logger.warn(`Failed to cache faction multiplier for ${factionId}:`, error);
+        // Don't fail faction creation if caching fails
+      }
 
       logger.info(`Created faction "${name}" (${factionId}) for guild ${guildId}`);
 

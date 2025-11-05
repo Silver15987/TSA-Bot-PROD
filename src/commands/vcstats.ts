@@ -41,7 +41,7 @@ export default {
       let currentSessionInfo = '';
       if (activeSession) {
         const currentDuration = Date.now() - activeSession.sessionStartTime;
-        const currentCoins = coinCalculator.calculateCoins(currentDuration, guildId);
+        const currentCoins = await coinCalculator.calculateCoins(currentDuration, guildId, targetUser.id);
 
         currentSessionInfo = `\n\n**Current Session:**\n` +
           `Duration: ${formatDuration(currentDuration, { shortFormat: true })}\n` +

@@ -3,6 +3,32 @@
  */
 
 /**
+ * Status Entry Schema
+ * Represents an active status/buff/debuff affecting a user
+ */
+export interface StatusEntry {
+  id: string; // Unique status ID
+  type: 'buff' | 'debuff' | 'status';
+  name: string; // e.g., 'coin_multiplier_2x_24h'
+  multiplier: number; // e.g., 2.0 for 2x multiplier
+  expiresAt: Date | null; // null for permanent statuses
+  source: 'quest' | 'item' | 'admin' | 'system';
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Item Entry Schema
+ * Represents an active item affecting a user's multipliers
+ */
+export interface ItemEntry {
+  id: string;
+  itemId: string; // Reference to item definition
+  multiplier: number;
+  expiresAt: Date | null;
+  metadata?: Record<string, any>;
+}
+
+/**
  * User Document Schema
  */
 export interface UserDocument {
@@ -53,6 +79,11 @@ export interface UserDocument {
   questsCompleted?: number;
   warsParticipated?: number;
 
+  // Status & Multipliers
+  statuses?: StatusEntry[]; // Array of active statuses/buffs/debuffs
+  items?: ItemEntry[]; // Array of active items affecting multipliers
+  multiplierEnabled?: boolean; // Admin toggle to enable/disable multipliers (default: true)
+
   // Statistics for leaderboard
   lastDailyReset: Date;
   lastWeeklyReset: Date;
@@ -98,6 +129,7 @@ export interface FactionDocument {
   treasury: number; // Current faction bank balance
   totalDeposited: number; // Lifetime deposits
   totalWithdrawn: number; // Lifetime withdrawals
+  coinMultiplier?: number; // Default: 1.0, stacks onto all faction members
 
   // Upkeep
   nextUpkeepDate: Date; // When next payment is due

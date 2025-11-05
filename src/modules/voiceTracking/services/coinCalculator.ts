@@ -1,5 +1,6 @@
 import { configManager } from '../../../core/configManager';
 import { sessionManager } from './sessionManager';
+import { multiplierCalculator } from '../../status/services/multiplierCalculator';
 import logger from '../../../core/logger';
 
 /**
@@ -9,14 +10,28 @@ import logger from '../../../core/logger';
 export class CoinCalculator {
   /**
    * Calculate coins earned based on duration
+   * @param durationMs Duration in milliseconds
+   * @param guildId Guild ID
+   * @param userId Optional user ID - if provided, multipliers will be applied
    */
-  calculateCoins(durationMs: number, guildId: string): number {
+  async calculateCoins(durationMs: number, guildId: string, userId?: string): Promise<number> {
     try {
       const config = configManager.getConfig(guildId);
       const coinsPerSecond = config.vcTracking.coinsPerSecond;
 
       const durationSeconds = Math.floor(durationMs / 1000);
-      const coinsEarned = Math.floor(durationSeconds * coinsPerSecond);
+      let coinsEarned = Math.floor(durationSeconds * coinsPerSecond);
+
+      // Apply multipliers if userId is provided
+      if (userId) {
+        try {
+          const multiplier = await multiplierCalculator.calculateTotalMultiplier(userId, guildId);
+          coinsEarned = Math.floor(coinsEarned * multiplier);
+        } catch (error) {
+          logger.warn(`Failed to apply multiplier for user ${userId}, using base calculation:`, error);
+          // Continue with base calculation if multiplier fails
+        }
+      }
 
       return coinsEarned;
     } catch (error) {
@@ -40,7 +55,7 @@ export class CoinCalculator {
       }
 
       const currentDuration = Date.now() - session.joinedAt;
-      return this.calculateCoins(currentDuration, guildId);
+      return await this.calculateCoins(currentDuration, guildId, userId);
     } catch (error) {
       logger.error(`Failed to calculate current session coins for user ${userId}:`, error);
       return 0;
@@ -64,15 +79,16 @@ export class CoinCalculator {
 
   /**
    * Calculate expected earnings for a given duration
+   * Note: This method does not apply multipliers (for display purposes, shows base rate)
    */
-  calculateExpectedEarnings(durationMs: number, guildId: string): {
+  async calculateExpectedEarnings(durationMs: number, guildId: string, userId?: string): Promise<{
     coins: number;
     perSecond: number;
     perMinute: number;
     perHour: number;
-  } {
+  }> {
     const perSecond = this.getCoinsPerSecond(guildId);
-    const coins = this.calculateCoins(durationMs, guildId);
+    const coins = await this.calculateCoins(durationMs, guildId, userId);
 
     return {
       coins,

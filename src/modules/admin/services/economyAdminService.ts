@@ -1,5 +1,6 @@
 import { database } from '../../../database/client';
 import { UserEconomyAdminResult } from '../types';
+import { multiplierCalculator } from '../../status/services/multiplierCalculator';
 import logger from '../../../core/logger';
 
 /**
@@ -46,11 +47,21 @@ export class EconomyAdminService {
 
       const balanceBefore = user.coins;
 
+      // Apply multiplier to admin-added coins
+      let finalAmount = amount;
+      try {
+        const multiplier = await multiplierCalculator.calculateTotalMultiplier(userId, guildId);
+        finalAmount = Math.floor(amount * multiplier);
+      } catch (error) {
+        logger.warn(`Failed to apply multiplier to admin add coins for user ${userId}, using base amount:`, error);
+        // Continue with base amount if multiplier fails
+      }
+
       // Add coins to user
       const result = await database.users.updateOne(
         { id: userId, guildId },
         {
-          $inc: { coins: amount },
+          $inc: { coins: finalAmount },
           $set: { updatedAt: new Date() },
         }
       );
@@ -67,25 +78,26 @@ export class EconomyAdminService {
         };
       }
 
-      const balanceAfter = balanceBefore + amount;
+      const balanceAfter = balanceBefore + finalAmount;
 
       // Log transaction
       await this.logTransaction(
         userId,
         guildId,
         'admin_add',
-        amount,
+        finalAmount,
         balanceAfter,
-        staffUserId
+        staffUserId,
+        { baseAmount: amount, multiplierApplied: finalAmount !== amount }
       );
 
-      logger.info(`Admin added ${amount} coins to user ${userId} (${user.username}). Balance: ${balanceBefore} → ${balanceAfter}`);
+      logger.info(`Admin added ${finalAmount} coins (base: ${amount}) to user ${userId} (${user.username}). Balance: ${balanceBefore} → ${balanceAfter}`);
 
       return {
         success: true,
         userId,
         username: user.username,
-        amount,
+        amount: finalAmount,
         balanceBefore,
         balanceAfter,
       };
@@ -221,7 +233,8 @@ export class EconomyAdminService {
     type: 'admin_add' | 'admin_remove',
     amount: number,
     balanceAfter: number,
-    staffUserId: string
+    staffUserId: string,
+    additionalMetadata?: Record<string, any>
   ): Promise<void> {
     try {
       await database.transactions.insertOne({
@@ -234,6 +247,7 @@ export class EconomyAdminService {
           guildId,
           staffUserId,
           timestamp: new Date(),
+          ...additionalMetadata,
         },
         createdAt: new Date(),
       });
