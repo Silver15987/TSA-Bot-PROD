@@ -56,7 +56,7 @@ export function getStatusTypeEmoji(type: 'buff' | 'debuff' | 'status'): string {
 /**
  * Get source label
  */
-export function getSourceLabel(source: 'quest' | 'item' | 'admin' | 'system'): string {
+export function getSourceLabel(source: 'quest' | 'item' | 'admin' | 'system' | 'role'): string {
   switch (source) {
     case 'quest':
       return 'Quest Reward';
@@ -66,6 +66,8 @@ export function getSourceLabel(source: 'quest' | 'item' | 'admin' | 'system'): s
       return 'Admin';
     case 'system':
       return 'System';
+    case 'role':
+      return 'Role Ability';
     default:
       return 'Unknown';
   }

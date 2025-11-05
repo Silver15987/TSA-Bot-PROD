@@ -129,6 +129,20 @@ export class QuestRewardService {
         await this.distributeIndividualReward(calc.userId, guildId, calc.reward, quest.id);
       }
 
+      // Update role condition progress for quest completion (all contributors)
+      try {
+        const { roleConditionTracker } = await import('../../roles/services/roleConditionTracker');
+        for (const calc of rewardCalculations) {
+          const result = await roleConditionTracker.updateProgress(calc.userId, guildId, 'quest', quest.id);
+          if (result.roleUnlocked) {
+            logger.info(`User ${calc.userId} unlocked role ${result.roleUnlocked} via quest completion`);
+          }
+        }
+      } catch (error) {
+        logger.error('Error tracking role condition progress for quest completion:', error);
+        // Don't fail quest completion if role tracking fails
+      }
+
       // Apply bonus effect if any
       if (quest.bonusEffect) {
         await this.applyBonusEffect(quest.bonusEffect, faction, guildId);
@@ -203,6 +217,12 @@ export class QuestRewardService {
           factionVcTime: 0,
           lifetimeFactionVcTime: 0,
           questsCompleted: 1,
+          statuses: [],
+          items: [],
+          multiplierEnabled: true,
+          role: null,
+          roleProgress: [],
+          roleCooldowns: [],
           lastDailyReset: new Date(),
           lastWeeklyReset: new Date(),
           lastMonthlyReset: new Date(),

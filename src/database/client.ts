@@ -11,6 +11,9 @@ import {
   ServerConfigDocument,
   ReactionRoleDocument,
   VCActivityDocument,
+  RoleUnlockConditionDocument,
+  RoleActionLogDocument,
+  RoleStatusDocument,
 } from '../types/database';
 
 /**
@@ -127,6 +130,18 @@ class DatabaseClient {
     return this.getCollection<VCActivityDocument>('vcActivity');
   }
 
+  get roleUnlockConditions(): Collection<RoleUnlockConditionDocument> {
+    return this.getCollection<RoleUnlockConditionDocument>('roleUnlockConditions');
+  }
+
+  get roleActionLogs(): Collection<RoleActionLogDocument> {
+    return this.getCollection<RoleActionLogDocument>('roleActionLogs');
+  }
+
+  get roleStatuses(): Collection<RoleStatusDocument> {
+    return this.getCollection<RoleStatusDocument>('roleStatuses');
+  }
+
   /**
    * Create database indexes for performance
    */
@@ -184,6 +199,22 @@ class DatabaseClient {
         { createdAt: 1 },
         { expireAfterSeconds: 7776000 } // TTL: 90 days
       );
+
+      // Role System indexes
+      await this.users.createIndex({ role: 1 }); // Query by role
+      await this.users.createIndex({ guildId: 1, role: 1 }); // Query by guild and role
+      
+      await this.roleUnlockConditions.createIndex({ guildId: 1, roleType: 1 }, { unique: true });
+      
+      await this.roleActionLogs.createIndex({ userId: 1, createdAt: -1 });
+      await this.roleActionLogs.createIndex({ guildId: 1, roleType: 1 });
+      await this.roleActionLogs.createIndex({ targetUserId: 1, createdAt: -1 });
+      await this.roleActionLogs.createIndex({ targetFactionId: 1, createdAt: -1 });
+      
+      await this.roleStatuses.createIndex({ userId: 1, expiresAt: 1 });
+      await this.roleStatuses.createIndex({ targetUserId: 1, expiresAt: 1 });
+      await this.roleStatuses.createIndex({ targetFactionId: 1, expiresAt: 1 });
+      await this.roleStatuses.createIndex({ expiresAt: 1 }); // For expiration cleanup
 
       logger.info('Database indexes created successfully');
     } catch (error) {

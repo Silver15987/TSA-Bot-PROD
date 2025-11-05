@@ -10,6 +10,7 @@ import { recoveryManager } from './modules/voiceTracking/services/recoveryManage
 import { startUpkeepTask, stopUpkeepTask } from './modules/factions/tasks/upkeepTask';
 import { upkeepManager } from './modules/factions/services/upkeepManager';
 import { startQuestScheduler, stopQuestScheduler } from './modules/quests/tasks/questScheduler';
+import { startRoleStatusExpirationTask, stopRoleStatusExpirationTask } from './modules/roles/tasks/roleStatusExpirationTask';
 import logger from './core/logger';
 
 /**
@@ -40,6 +41,7 @@ async function shutdown(signal: string): Promise<void> {
     syncManager.stop();
     stopUpkeepTask();
     stopQuestScheduler();
+    stopRoleStatusExpirationTask();
     webhookServer.stop();
 
     // Give ongoing operations time to complete
@@ -96,6 +98,37 @@ async function main() {
         logger.error(`Failed to load command file: ${file}`, error);
         throw error; // Re-throw to see the full error
       }
+    }
+
+    // Load module commands (role-specific commands)
+    logger.info('Loading module commands...');
+    const modulesRolesCommandsPath = join(__dirname, 'modules', 'roles', 'commands');
+    try {
+      const moduleCommandFiles = readdirSync(modulesRolesCommandsPath).filter((file) =>
+        (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
+      );
+
+      for (const file of moduleCommandFiles) {
+        const filePath = join(modulesRolesCommandsPath, file);
+        try {
+          logger.info(`Loading module command file: ${file}`);
+          const command = require(filePath).default;
+
+          if ('data' in command && 'execute' in command) {
+            client.commands.set(command.data.name, command);
+            commands.push(command.data.toJSON());
+            logger.info(`Loaded module command: ${command.data.name}`);
+          } else {
+            logger.warn(`Skipping invalid module command file: ${file}`);
+          }
+        } catch (error) {
+          logger.error(`Failed to load module command file: ${file}`, error);
+          // Don't throw - allow other commands to load
+        }
+      }
+    } catch (error) {
+      // Directory might not exist yet, that's okay
+      logger.debug('Module commands directory not found or empty:', error);
     }
 
     // Load events
@@ -160,6 +193,9 @@ async function main() {
 
       // Start quest scheduler task
       startQuestScheduler(client);
+
+      // Start role status expiration task
+      startRoleStatusExpirationTask();
 
       logger.info('All systems initialized and ready');
 

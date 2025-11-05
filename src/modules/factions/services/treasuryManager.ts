@@ -142,6 +142,18 @@ export class TreasuryManager {
         logger.error('Error tracking quest treasury contribution:', error);
       }
 
+      // Update role condition progress for faction deposits
+      try {
+        const { roleConditionTracker } = await import('../../roles/services/roleConditionTracker');
+        const result = await roleConditionTracker.updateProgress(userId, guildId, 'faction_deposit', amount);
+        if (result.roleUnlocked) {
+          logger.info(`User ${userId} unlocked role ${result.roleUnlocked} via faction deposit`);
+        }
+      } catch (error) {
+        logger.error('Error tracking role condition progress:', error);
+        // Don't fail the deposit if role tracking fails
+      }
+
       return {
         success: true,
         newBalance: newTreasuryBalance,

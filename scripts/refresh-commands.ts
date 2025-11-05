@@ -33,7 +33,32 @@ async function refreshCommands() {
       }
     }
 
-    console.log(`\nFound ${commands.length} commands`);
+    // Load module commands (role-specific commands)
+    console.log('\nLoading module commands from src/modules/roles/commands...');
+    const modulesRolesCommandsPath = join(__dirname, '..', 'src', 'modules', 'roles', 'commands');
+    try {
+      const moduleCommandFiles = readdirSync(modulesRolesCommandsPath).filter((file) =>
+        file.endsWith('.ts') || file.endsWith('.js')
+      );
+
+      for (const file of moduleCommandFiles) {
+        const filePath = join(modulesRolesCommandsPath, file);
+        try {
+          const command = require(filePath).default;
+
+          if ('data' in command && 'execute' in command) {
+            commands.push(command.data.toJSON());
+            console.log(`Loaded module command: ${command.data.name}`);
+          }
+        } catch (error) {
+          console.warn(`Failed to load module command file: ${file}`, error);
+        }
+      }
+    } catch (error) {
+      console.warn('Module commands directory not found or empty (this is okay)');
+    }
+
+    console.log(`\nFound ${commands.length} total commands`);
     console.log('Clearing old commands...');
 
     const rest = new REST({ version: '10' }).setToken(token);

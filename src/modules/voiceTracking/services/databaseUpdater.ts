@@ -237,6 +237,10 @@ export class DatabaseUpdater {
             statuses: [],
             items: [],
             multiplierEnabled: true,
+            // Initialize role fields
+            role: null,
+            roleProgress: [],
+            roleCooldowns: [],
           },
         },
         { upsert: true }

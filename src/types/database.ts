@@ -3,6 +3,34 @@
  */
 
 /**
+ * Role Type
+ */
+export type RoleType = 'guard' | 'thief' | 'witch' | 'oracle' | 'enchanter' | 'merchant';
+
+/**
+ * Role Progress Entry Schema
+ * Tracks progress toward unlocking a specific role
+ */
+export interface RoleProgressEntry {
+  roleType: RoleType;
+  conditions: {
+    factionDeposit?: number; // Total deposited toward this role
+    coinsSpent?: number; // Total spent toward this role
+    questsCompleted?: string[]; // Quest IDs completed toward this role
+  };
+  lastUpdated: Date;
+}
+
+/**
+ * Role Cooldown Entry Schema
+ * Tracks ability cooldowns for a user's role
+ */
+export interface RoleCooldownEntry {
+  abilityName: string;
+  cooldownEndsAt: Date;
+}
+
+/**
  * Status Entry Schema
  * Represents an active status/buff/debuff affecting a user
  */
@@ -12,7 +40,7 @@ export interface StatusEntry {
   name: string; // e.g., 'coin_multiplier_2x_24h'
   multiplier: number; // e.g., 2.0 for 2x multiplier
   expiresAt: Date | null; // null for permanent statuses
-  source: 'quest' | 'item' | 'admin' | 'system';
+  source: 'quest' | 'item' | 'admin' | 'system' | 'role';
   metadata?: Record<string, any>;
 }
 
@@ -83,6 +111,11 @@ export interface UserDocument {
   statuses?: StatusEntry[]; // Array of active statuses/buffs/debuffs
   items?: ItemEntry[]; // Array of active items affecting multipliers
   multiplierEnabled?: boolean; // Admin toggle to enable/disable multipliers (default: true)
+
+  // Role System
+  role?: RoleType | null; // Current active role
+  roleProgress?: RoleProgressEntry[]; // Track progress toward each role's conditions
+  roleCooldowns?: RoleCooldownEntry[]; // Track ability cooldowns per role
 
   // Statistics for leaderboard
   lastDailyReset: Date;
@@ -299,7 +332,7 @@ export interface TransactionDocument {
   id: string;
   userId: string;
 
-  type: 'coinflip' | 'slots' | 'vctime_earn' | 'faction_deposit' | 'faction_withdraw' | 'admin_add' | 'admin_remove' | 'quest_reward' | 'war_reward';
+  type: 'coinflip' | 'slots' | 'vctime_earn' | 'faction_deposit' | 'faction_withdraw' | 'admin_add' | 'admin_remove' | 'quest_reward' | 'war_reward' | 'role_ability';
   amount: number; // Positive = gain, Negative = loss
   balanceAfter: number;
 
@@ -435,4 +468,54 @@ export interface VCActivityDocument {
   // Metadata
   date: Date; // Date normalized to 00:00:00 UTC (for daily aggregation)
   createdAt: Date; // Record creation timestamp (for TTL index)
+}
+
+/**
+ * Role Unlock Condition Document Schema
+ * Stores admin-configured unlock conditions for each role per guild
+ */
+export interface RoleUnlockConditionDocument {
+  guildId: string;
+  roleType: RoleType;
+  conditions: Array<{
+    type: 'faction_deposit' | 'coins_spent' | 'quest';
+    value: number | string; // Amount for deposit/spent, questId for quest
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Role Action Log Document Schema
+ * Logs all role ability interactions for audit/history
+ */
+export interface RoleActionLogDocument {
+  id: string;
+  guildId: string;
+  userId: string; // User who performed the action
+  roleType: RoleType;
+  abilityName: string;
+  targetUserId?: string;
+  targetFactionId?: string;
+  success: boolean;
+  amount?: number;
+  metadata?: Record<string, any>;
+  createdAt: Date;
+}
+
+/**
+ * Role Status Document Schema
+ * Tracks active role effects (curses, blessings, guards, investments)
+ */
+export interface RoleStatusDocument {
+  id: string;
+  guildId: string;
+  userId: string; // Caster/owner of the status
+  targetUserId?: string;
+  targetFactionId?: string;
+  roleType: RoleType;
+  effectType: 'protection' | 'curse' | 'blessing' | 'investment' | 'wanted' | 'market_manipulation';
+  expiresAt: Date | null; // null for permanent statuses
+  metadata?: Record<string, any>;
+  createdAt: Date;
 }
