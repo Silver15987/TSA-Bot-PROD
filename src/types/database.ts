@@ -332,7 +332,7 @@ export interface TransactionDocument {
   id: string;
   userId: string;
 
-  type: 'coinflip' | 'slots' | 'vctime_earn' | 'faction_deposit' | 'faction_withdraw' | 'admin_add' | 'admin_remove' | 'quest_reward' | 'war_reward' | 'role_ability';
+  type: 'coinflip' | 'slots' | 'vctime_earn' | 'faction_deposit' | 'faction_withdraw' | 'admin_add' | 'admin_remove' | 'quest_reward' | 'war_reward' | 'role_ability' | 'role_purchase';
   amount: number; // Positive = gain, Negative = loss
   balanceAfter: number;
 
