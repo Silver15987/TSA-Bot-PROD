@@ -43,8 +43,20 @@ export default {
       // Get role-based statuses (curses, blessings, etc.)
       const roleStatuses = await roleStatusManager.getActiveStatusesForUser(userId, guildId);
       
+      // Also get faction-based statuses if user is in a faction
+      let factionRoleStatuses: any[] = [];
+      if (user.currentFaction) {
+        factionRoleStatuses = await roleStatusManager.getActiveStatusesForFaction(
+          user.currentFaction,
+          guildId
+        );
+      }
+      
+      // Combine user and faction role statuses
+      const allRoleStatuses = [...roleStatuses, ...factionRoleStatuses];
+      
       // Convert role statuses to StatusEntry format
-      const convertedRoleStatuses: StatusEntry[] = roleStatuses.map(roleStatus => {
+      const convertedRoleStatuses: StatusEntry[] = allRoleStatuses.map(roleStatus => {
         let name = '';
         let type: 'buff' | 'debuff' | 'status' = 'status';
         let multiplier = 1.0;
@@ -54,20 +66,27 @@ export default {
             type = 'debuff';
             const curseType = roleStatus.metadata?.curseType || 'unknown';
             const curseAmount = roleStatus.metadata?.amount || 0;
+            // Distinguish between personal and faction curses
+            const cursePrefix = roleStatus.targetFactionId ? 'Faction Curse' : 'Witch\'s Curse';
             if (curseType === 'earning_rate') {
-              name = `Witch's Curse - ${curseAmount}% Earning Reduction`;
+              name = `${cursePrefix} - ${curseAmount}% Earning Reduction`;
               multiplier = 1.0 - (curseAmount / 100); // e.g., 0.8 for 20% reduction
             } else if (curseType === 'instant_loss') {
-              name = `Witch's Curse - Instant Loss`;
+              name = `${cursePrefix} - Instant Loss`;
               multiplier = 1.0; // Instant loss doesn't affect multiplier
             } else {
-              name = `Witch's Curse`;
+              name = cursePrefix;
             }
             break;
           case 'blessing':
             type = 'buff';
             const blessingBonus = roleStatus.metadata?.coinGainBonus || 0;
-            name = `Enchanter's Blessing (+${blessingBonus}% coin gain)`;
+            // Distinguish between personal and faction blessings
+            if (roleStatus.targetFactionId) {
+              name = `Faction Blessing (+${blessingBonus}% coin gain)`;
+            } else {
+              name = `Enchanter's Blessing (+${blessingBonus}% coin gain)`;
+            }
             multiplier = 1.0 + (blessingBonus / 100); // e.g., 1.2 for 20% bonus
             break;
           case 'wanted':

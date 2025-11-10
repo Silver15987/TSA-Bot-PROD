@@ -67,6 +67,45 @@ async function handleSteal(
   userId: string,
   guildId: string
 ): Promise<void> {
+  // Check if user has Wanted status - blocks all command usage
+  const wantedStatuses = await roleStatusManager.getActiveStatusesForUser(
+    userId,
+    guildId,
+    'wanted'
+  );
+
+  if (wantedStatuses.length > 0) {
+    const wantedStatus = wantedStatuses[0];
+    const expiresAt = wantedStatus.expiresAt;
+    const timeRemaining = expiresAt ? Math.max(0, expiresAt.getTime() - Date.now()) : 0;
+    const hoursRemaining = Math.ceil(timeRemaining / (60 * 60 * 1000));
+    
+    await interaction.editReply({
+      content: `❌ You have Wanted status and cannot use thief commands. A Guard must use \`/guard bail\` to remove this status. ${expiresAt ? `Time remaining: ${hoursRemaining} hour(s)` : ''}`,
+    });
+    return;
+  }
+
+  // Check cooldown (6 hours after successful steal)
+  const cooldownCheck = await roleAbilityService.checkCooldown(userId, guildId, 'steal');
+  if (!cooldownCheck.canUse) {
+    const cooldownEndsAt = cooldownCheck.cooldownEndsAt;
+    if (cooldownEndsAt) {
+      const timeRemaining = cooldownEndsAt.getTime() - Date.now();
+      const hoursRemaining = Math.ceil(timeRemaining / (60 * 60 * 1000));
+      const minutesRemaining = Math.ceil((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+      
+      await interaction.editReply({
+        content: `❌ You can only steal once every 6 hours after a successful theft. Time remaining: ${hoursRemaining}h ${minutesRemaining}m`,
+      });
+      return;
+    }
+    await interaction.editReply({
+      content: `❌ ${cooldownCheck.error || 'Cannot use ability right now.'}`,
+    });
+    return;
+  }
+
   const targetInput = interaction.options.getString('target', true);
   const amount = interaction.options.getInteger('amount', true);
 
@@ -134,6 +173,9 @@ async function handleSteal(
       );
     }
 
+    // Set 6-hour cooldown after successful steal
+    await roleAbilityService.setCooldown(userId, guildId, 'steal', 6);
+
     // Log action
     await roleAbilityService.logAbilityUse(
       userId,
@@ -148,7 +190,7 @@ async function handleSteal(
 
     const embed = new EmbedBuilder()
       .setTitle(`${getRoleEmoji('thief')} Theft Successful`)
-      .setDescription(`You successfully stole ${amount.toLocaleString()} coins from <@${targetUserId}>.`)
+      .setDescription(`You successfully stole ${amount.toLocaleString()} coins from <@${targetUserId}>.\n\n⏰ You can steal again in 6 hours.`)
       .setColor(0x5865f2)
       .setTimestamp();
 
@@ -159,7 +201,8 @@ async function handleSteal(
 
     await roleStatusManager.applyStatus({
       guildId,
-      userId,
+      userId, // Thief (caster/owner)
+      targetUserId: userId, // Thief is also the target (they become wanted)
       roleType: 'thief',
       effectType: 'wanted',
       expiresAt,
@@ -183,7 +226,7 @@ async function handleSteal(
 
     const embed = new EmbedBuilder()
       .setTitle(`${getRoleEmoji('thief')} Theft Failed`)
-      .setDescription(`Your theft attempt failed! You now have Wanted status for 24 hours (10% coin gain reduction).`)
+      .setDescription(`Your theft attempt failed! You now have Wanted status for 24 hours.\n\n⚠️ **Wanted status blocks all thief commands.** A Guard must use \`/guard bail\` to remove this status.`)
       .setColor(0xff0000)
       .setTimestamp();
 
