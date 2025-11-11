@@ -109,17 +109,6 @@ async function handleSteal(
   const targetInput = interaction.options.getString('target', true);
   const amount = interaction.options.getInteger('amount', true);
 
-  // Calculate success rate (base 50% - amount/1000)
-  const baseRate = 50;
-  const amountPenalty = amount / 1000;
-  let successRate = Math.max(0, baseRate - amountPenalty);
-
-  // Check for Guard protection (simplified - would need to check actual protected targets)
-  // For now, just use base rate
-
-  // Roll for success
-  const success = roleAbilityService.rollSuccess(successRate);
-
   // Parse target
   const targetMatch = targetInput.match(/<@!?(\d+)>/);
   let targetUserId: string | undefined;
@@ -156,6 +145,23 @@ async function handleSteal(
     });
     return;
   }
+
+  // Check if target is protected by a Guard
+  const protectionStatuses = await roleStatusManager.getActiveStatusesForUser(
+    targetUserId,
+    guildId,
+    'protection'
+  );
+
+  const isProtected = protectionStatuses.length > 0;
+
+  // Calculate success rate (base 50% - amount/1000)
+  const baseRate = 50;
+  const amountPenalty = amount / 1000;
+  let successRate = Math.max(0, baseRate - amountPenalty);
+
+  // Roll for success (automatically fail if target is protected)
+  const success = !isProtected && roleAbilityService.rollSuccess(successRate);
 
   if (success) {
     // Successful theft
@@ -209,6 +215,7 @@ async function handleSteal(
       metadata: {
         stealAmount: amount,
         caughtAt: new Date(),
+        caughtByGuard: isProtected,
       },
     });
 
@@ -224,9 +231,13 @@ async function handleSteal(
       amount
     );
 
+    const failureReason = isProtected
+      ? `The target was protected by a Guard! You were caught and now have Wanted status for 24 hours.`
+      : `Your theft attempt failed! You now have Wanted status for 24 hours.`;
+
     const embed = new EmbedBuilder()
       .setTitle(`${getRoleEmoji('thief')} Theft Failed`)
-      .setDescription(`Your theft attempt failed! You now have Wanted status for 24 hours.\n\n⚠️ **Wanted status blocks all thief commands.** A Guard must use \`/guard bail\` to remove this status.`)
+      .setDescription(`${failureReason}\n\n⚠️ **Wanted status blocks all thief commands.** A Guard must use \`/guard bail\` to remove this status.`)
       .setColor(0xff0000)
       .setTimestamp();
 
