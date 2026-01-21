@@ -10,25 +10,25 @@ import logger from '../core/logger';
 
 export default {
   data: new SlashCommandBuilder()
-    .setName('add-hours')
-    .setDescription('Manually add VC time to a user (Staff only)')
+    .setName('remove-hours')
+    .setDescription('Manually remove VC time from a user (Staff only)')
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('The user to add VC time to')
+        .setDescription('The user to remove VC time from')
         .setRequired(true)
     )
     .addIntegerOption(option =>
       option
         .setName('minutes')
-        .setDescription('Amount of VC time to add (in minutes)')
+        .setDescription('Amount of VC time to remove (in minutes)')
         .setRequired(true)
         .setMinValue(1)
     )
     .addStringOption(option =>
       option
         .setName('date')
-        .setDescription('Date the time should be credited for (YYYY-MM-DD, UTC)')
+        .setDescription('Date the time should be deducted for (YYYY-MM-DD, UTC)')
         .setRequired(true)
     ),
 
@@ -60,7 +60,6 @@ export default {
       const minutes = interaction.options.getInteger('minutes', true);
       const dateInput = interaction.options.getString('date', true).trim();
 
-      // Basic date validation: expect YYYY-MM-DD
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(dateInput)) {
         await interaction.editReply({
@@ -77,7 +76,6 @@ export default {
         return;
       }
 
-      // Verify the date didn't roll over (e.g., Feb 30 → Mar 1)
       const [year, month, day] = dateInput.split('-').map(Number);
       if (
         creditedAt.getUTCFullYear() !== year ||
@@ -92,31 +90,30 @@ export default {
 
       const durationMs = minutes * 60 * 1000;
 
-      // Fetch user document
       const userDoc = await database.users.findOne({ id: targetUser.id, guildId });
       if (!userDoc) {
         await interaction.editReply({
-          content: '❌ User not found in the database. They must have used the bot at least once.',
+          content: '❌ User not found in the database.',
         });
         return;
       }
 
-      // Calculate coins using the same logic as VC tracking (with multipliers)
-      const coinsEarned = await coinCalculator.calculateCoins(durationMs, guildId, targetUser.id);
+      const coinsToRemove = await coinCalculator.calculateCoins(durationMs, guildId, targetUser.id);
 
-      // Update user aggregates
       const balanceBefore = userDoc.coins;
-      const balanceAfter = balanceBefore + coinsEarned;
+      const coinsDelta = Math.min(coinsToRemove, balanceBefore);
+      const balanceAfter = balanceBefore - coinsDelta;
+
+      const newTotalVcTime = Math.max(0, (userDoc.totalVcTime || 0) - durationMs);
+      const newTotalCoinsEarned = Math.max(0, (userDoc.totalCoinsEarned || 0) - coinsToRemove);
 
       const updateResult = await database.users.updateOne(
         { id: targetUser.id, guildId },
         {
-          $inc: {
-            totalVcTime: durationMs,
-            coins: coinsEarned,
-            totalCoinsEarned: coinsEarned,
-          },
           $set: {
+            totalVcTime: newTotalVcTime,
+            totalCoinsEarned: newTotalCoinsEarned,
+            coins: balanceAfter,
             updatedAt: new Date(),
           },
         }
@@ -129,22 +126,20 @@ export default {
         return;
       }
 
-      // Create transaction record
-      const transactionId = `tx_manual_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
+      const transactionId = `tx_manual_remove_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       try {
         await database.transactions.insertOne({
           id: transactionId,
           userId: targetUser.id,
           type: 'vctime_earn',
-          amount: coinsEarned,
+          amount: -coinsDelta,
           balanceAfter,
           metadata: {
-            duration: durationMs,
+            durationRemoved: durationMs,
             channelId: null,
             factionId: null,
             guildId,
-            source: 'manual_add_hours',
+            source: 'manual_remove_hours',
             creditedAt,
             staffUserId: interaction.user.id,
           },
@@ -152,74 +147,52 @@ export default {
         });
       } catch (error) {
         logger.error(
-          `Failed to create manual vctime_earn transaction ${transactionId} for user ${targetUser.id}:`,
+          `Failed to create manual remove transaction ${transactionId} for user ${targetUser.id}:`,
           error
         );
-        // Do not fail the command if transaction logging fails
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0x3498db)
-        .setTitle('✅ VC Time Manually Added')
-        .setDescription(`Added **${minutes}** minutes of VC time to ${targetUser}`)
+        .setColor(0xe67e22)
+        .setTitle('✅ VC Time Manually Removed')
+        .setDescription(`Removed **${minutes}** minutes of VC time from ${targetUser}`)
         .addFields(
-          {
-            name: '🕒 Duration',
-            value: `${minutes} minutes`,
-            inline: true,
-          },
-          {
-            name: '📅 Credited Date (UTC)',
-            value: dateInput,
-            inline: true,
-          },
-          {
-            name: '💰 Coins Earned',
-            value: coinsEarned.toLocaleString(),
-            inline: true,
-          },
-          {
-            name: '💵 Balance Before',
-            value: `${balanceBefore.toLocaleString()} coins`,
-            inline: true,
-          },
-          {
-            name: '💰 Balance After',
-            value: `${balanceAfter.toLocaleString()} coins`,
-            inline: true,
-          },
+          { name: '🕒 Duration Removed', value: `${minutes} minutes`, inline: true },
+          { name: '📅 Date (UTC)', value: dateInput, inline: true },
+          { name: '💰 Coins Deducted', value: `-${coinsDelta.toLocaleString()}`, inline: true },
+          { name: '💵 Balance Before', value: `${balanceBefore.toLocaleString()} coins`, inline: true },
+          { name: '💰 Balance After', value: `${balanceAfter.toLocaleString()} coins`, inline: true },
         )
         .setFooter({ text: `Staff: ${interaction.user.username}` })
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
 
-      // Send audit log to configured channel (if available)
       await sendAuditLog(interaction, {
-        type: 'add',
+        type: 'remove',
         targetUserId: targetUser.id,
         targetUsername: targetUser.username,
         minutes,
-        coinsDelta: coinsEarned,
+        coinsDelta: -coinsDelta,
         balanceBefore,
         balanceAfter,
         dateInput,
       });
 
       logger.info(
-        `Staff ${interaction.user.id} manually added ${minutes} minutes (${durationMs} ms) of VC time ` +
-        `to user ${targetUser.id} in guild ${guildId}, coinsEarned=${coinsEarned}, ` +
+        `Staff ${interaction.user.id} manually removed ${minutes} minutes (${durationMs} ms) of VC time ` +
+        `from user ${targetUser.id} in guild ${guildId}, coinsRemoved=${coinsDelta}, ` +
         `balance: ${balanceBefore} -> ${balanceAfter}`
       );
     } catch (error) {
-      logger.error('Error in add-hours command:', error);
+      logger.error('Error in remove-hours command:', error);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({
-          content: '❌ An unexpected error occurred while adding hours.',
+          content: '❌ An unexpected error occurred while removing hours.',
         });
       } else {
         await interaction.reply({
-          content: '❌ An unexpected error occurred while adding hours.',
+          content: '❌ An unexpected error occurred while removing hours.',
           ephemeral: true,
         });
       }
@@ -230,7 +203,7 @@ export default {
 async function sendAuditLog(
   interaction: ChatInputCommandInteraction,
   data: {
-    type: 'add';
+    type: 'remove';
     targetUserId: string;
     targetUsername: string;
     minutes: number;
@@ -249,12 +222,12 @@ async function sendAuditLog(
     if (!channel || !channel.isTextBased()) return;
 
     const embed = new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('Staff Manual Hours Added')
+      .setColor(0xe67e22)
+      .setTitle('Staff Manual Hours Removed')
       .setDescription(`<@${data.targetUserId}> (${data.targetUsername})`)
       .addFields(
-        { name: 'Minutes Added', value: `${data.minutes}`, inline: true },
-        { name: 'Coins Delta', value: `+${data.coinsDelta.toLocaleString()}`, inline: true },
+        { name: 'Minutes Removed', value: `${data.minutes}`, inline: true },
+        { name: 'Coins Delta', value: `${data.coinsDelta.toLocaleString()}`, inline: true },
         { name: 'Date (UTC)', value: data.dateInput, inline: true },
         { name: 'Balance Before', value: data.balanceBefore.toLocaleString(), inline: true },
         { name: 'Balance After', value: data.balanceAfter.toLocaleString(), inline: true },
@@ -264,6 +237,6 @@ async function sendAuditLog(
 
     await (channel as any).send({ embeds: [embed] });
   } catch (error) {
-    logger.warn('Failed to send audit log for add-hours:', error);
+    logger.warn('Failed to send audit log for remove-hours:', error);
   }
 }
