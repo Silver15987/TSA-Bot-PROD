@@ -33,16 +33,24 @@ export default {
 
   async execute(interaction: ChatInputCommandInteraction) {
     try {
+      if (!interaction.guildId || !interaction.guild) {
+        await interaction.reply({
+          content: '❌ This command can only be used in a server.',
+          ephemeral: true,
+        });
+        return;
+      }
+
       await interaction.deferReply({ ephemeral: true });
 
-      const guildId = interaction.guildId!;
+      const guildId = interaction.guildId;
       const messageId = interaction.options.getString('messageid', true);
       const channelId = interaction.options.getString('channelid') || interaction.channelId;
       const emojiInput = interaction.options.getString('emoji') || '✅';
 
       // Permission: admin or staff role
       const config = configManager.getConfig(guildId);
-      const member = interaction.guild?.members.cache.get(interaction.user.id);
+      const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
       if (!member) {
         await interaction.editReply({ content: '❌ Could not verify your permissions.' });
         return;
