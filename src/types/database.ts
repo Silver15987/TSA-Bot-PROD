@@ -209,6 +209,10 @@ export interface FactionDocument {
   // Metadata
   createdAt: Date;
   updatedAt: Date;
+
+  // System / event factions
+  isSystemFaction?: boolean;
+  createdBy?: string;
 }
 
 /**
@@ -396,6 +400,7 @@ export interface ServerConfigDocument {
     staffRoleIds: string[]; // Roles that can use admin commands
     auditLogChannelId: string; // Channel for audit logs
     betaRoleIds?: string[]; // Roles that can use bot during beta testing
+    eventManagerRoleIds?: string[]; // Roles that can use event management commands
   };
 
   // Quest Configuration
@@ -441,6 +446,8 @@ export interface ReactionRoleDocument {
   emoji: string; // Emoji to react with (unicode or custom emoji ID)
   createdAt: Date;
   createdBy: string; // User ID who created the reaction role
+  // Optional fields for balanced faction assignment
+  roleIds?: string[]; // For balanced assignment across multiple roles
 }
 
 /**

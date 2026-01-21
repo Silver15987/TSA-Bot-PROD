@@ -47,11 +47,11 @@ function parseArgs(argv: string[]): Args {
 
 // Hardcoded system notice (embed)
 const HARD_CODED_NOTICE = [
-  'Unusual activity was detected involving exploitation of the coin system by certain members of the factions.',
+  'Unusual activity was detected involving exploitation of the thief system by certain members against your faction.',
   '',
   'All related transactions and gains have been reverted, and the responsible users have been penalized. Members who received any portion of the exploited coins have also been penalized.',
   '',
-  'As a result, the factions have received a faction-wide penalty.',
+  'As a result, the factions have received a faction-wide penalty of 48690 coins and your faction has been refunded the amount.',
   '',
   'Please ensure fair play going forward.'
 ].join('\n');

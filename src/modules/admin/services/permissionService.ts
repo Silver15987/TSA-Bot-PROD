@@ -60,6 +60,56 @@ export class PermissionService {
   }
 
   /**
+   * Check if a member has event manager permissions
+   * Falls back to staff roles if no event manager roles are configured
+   */
+  hasEventManagerPermission(member: GuildMember, guildId: string): PermissionCheckResult {
+    try {
+      const config = configManager.getConfig(guildId);
+
+      const eventManagerRoleIds = config.admin?.eventManagerRoleIds || [];
+
+      // If event manager roles are configured, use them
+      if (eventManagerRoleIds.length > 0) {
+        const hasEventRole = member.roles.cache.some(role =>
+          eventManagerRoleIds.includes(role.id)
+        );
+
+        if (!hasEventRole) {
+          return {
+            hasPermission: false,
+            reason: 'You do not have the required event manager role to use this command.',
+          };
+        }
+
+        return { hasPermission: true };
+      }
+
+      // Fall back to staff roles
+      return this.hasStaffPermission(member, guildId);
+    } catch (error) {
+      logger.error('Error checking event manager permissions:', error);
+      return {
+        hasPermission: false,
+        reason: 'An error occurred while checking permissions.',
+      };
+    }
+  }
+
+  /**
+   * Get configured event manager role IDs for a guild
+   */
+  getEventManagerRoleIds(guildId: string): string[] {
+    try {
+      const config = configManager.getConfig(guildId);
+      return config.admin?.eventManagerRoleIds || [];
+    } catch (error) {
+      logger.error('Error getting event manager role IDs:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get audit log channel ID for a guild
    */
   getAuditLogChannelId(guildId: string): string | null {
