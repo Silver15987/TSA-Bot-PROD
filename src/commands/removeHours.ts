@@ -34,7 +34,15 @@ export default {
 
   async execute(interaction: ChatInputCommandInteraction) {
     try {
-      const guildId = interaction.guildId!;
+      const guildId = interaction.guildId;
+      if (!guildId) {
+        await interaction.reply({
+          content: '❌ This command can only be used in a server.',
+          ephemeral: true,
+        });
+        return;
+      }
+
       const member = interaction.member;
 
       if (!member || typeof (member as any).permissions === 'string') {
