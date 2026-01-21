@@ -34,15 +34,7 @@ export default {
 
   async execute(interaction: ChatInputCommandInteraction) {
     try {
-      const guildId = interaction.guildId;
-      if (!guildId) {
-        await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          ephemeral: true,
-        });
-        return;
-      }
-
+      const guildId = interaction.guildId!;
       const member = interaction.member;
 
       if (!member || typeof (member as any).permissions === 'string') {
@@ -127,11 +119,14 @@ export default {
         }
       );
 
-      if (updateResult.modifiedCount === 0) {
+      if (updateResult.matchedCount === 0) {
+        logger.warn(
+          `remove-hours: update matched 0 documents for user ${targetUser.id} in guild ${guildId}`
+        );
         await interaction.editReply({
-          content: '❌ Failed to update user record. No changes were made.',
+          content: '⚠️ User record was not found while applying the update, but continuing. Please verify the result.',
         });
-        return;
+        // Continue to create transaction/audit so staff can see what was attempted
       }
 
       const transactionId = `tx_manual_remove_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
