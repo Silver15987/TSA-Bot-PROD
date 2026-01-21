@@ -178,8 +178,11 @@ export default {
             roleId: roles[0].id, // primary role (kept for backward compatibility)
             roleIds: roles.map(r => r.id),
             emoji,
-            createdAt: new Date(),
             createdBy: interaction.user.id,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            createdAt: new Date(),
           },
         },
         { upsert: true }
