@@ -2,6 +2,7 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   PermissionFlagsBits,
+  MessageReaction,
 } from 'discord.js';
 import { database } from '../database/client';
 import { configManager } from '../core/configManager';
@@ -96,7 +97,7 @@ export default {
         const reaction =
           message.reactions.resolve(emojiInput) ||
           message.reactions.cache.find(
-            r => r.emoji.id === emojiInput || r.emoji.name === emojiInput
+            (r: MessageReaction) => r.emoji.id === emojiInput || r.emoji.name === emojiInput
           );
         if (reaction) {
           await reaction.remove();
