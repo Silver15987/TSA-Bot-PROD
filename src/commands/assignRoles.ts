@@ -23,28 +23,65 @@ export default {
         .setDescription('The ID of the channel containing the message')
         .setRequired(true)
     )
+    // Support 1–10 roles (role_1 required; role_2..role_10 optional)
     .addRoleOption(option =>
       option
         .setName('role_1')
-        .setDescription('First faction role to assign')
+        .setDescription('Faction role to assign (required)')
         .setRequired(true)
     )
     .addRoleOption(option =>
       option
         .setName('role_2')
-        .setDescription('Second faction role to assign')
-        .setRequired(true)
+        .setDescription('Faction role to assign')
+        .setRequired(false)
     )
     .addRoleOption(option =>
       option
         .setName('role_3')
-        .setDescription('Third faction role to assign')
+        .setDescription('Faction role to assign')
         .setRequired(false)
     )
     .addRoleOption(option =>
       option
         .setName('role_4')
-        .setDescription('Fourth faction role to assign')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_5')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_6')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_7')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_8')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_9')
+        .setDescription('Faction role to assign')
+        .setRequired(false)
+    )
+    .addRoleOption(option =>
+      option
+        .setName('role_10')
+        .setDescription('Faction role to assign')
         .setRequired(false)
     ),
 
@@ -82,17 +119,31 @@ export default {
       const messageId = interaction.options.getString('message_id', true);
       const channelId = interaction.options.getString('channel_id', true);
 
+      const roleOptionNames = [
+        'role_1',
+        'role_2',
+        'role_3',
+        'role_4',
+        'role_5',
+        'role_6',
+        'role_7',
+        'role_8',
+        'role_9',
+        'role_10',
+      ];
+
       const roles: Role[] = [];
-      for (const optionName of ['role_1', 'role_2', 'role_3', 'role_4']) {
-        const role = interaction.options.getRole(optionName as any, optionName === 'role_1' || optionName === 'role_2') as Role | null;
+      for (const optionName of roleOptionNames) {
+        const required = optionName === 'role_1';
+        const role = interaction.options.getRole(optionName as any, required) as Role | null;
         if (role) {
           roles.push(role);
         }
       }
 
-      if (roles.length < 2) {
+      if (roles.length < 1) {
         await interaction.editReply({
-          content: '❌ Please provide at least two roles for balanced assignment.',
+          content: '❌ Please provide at least one role.',
         });
         return;
       }

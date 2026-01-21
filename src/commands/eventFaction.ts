@@ -41,6 +41,17 @@ export default {
             .setDescription('Name of the new system faction')
             .setRequired(true)
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('disband-faction')
+        .setDescription('Disband an event/system faction (Admin only)')
+        .addRoleOption(option =>
+          option
+            .setName('faction_role')
+            .setDescription('Faction role representing the faction to disband')
+            .setRequired(true)
+        )
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -56,11 +67,11 @@ export default {
 
       const subcommand = interaction.options.getSubcommand();
 
-      if (subcommand === 'create-faction') {
+      if (subcommand === 'create-faction' || subcommand === 'disband-faction') {
         // Strictly admin-only per requirements
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
           await interaction.reply({
-            content: '❌ You need Administrator permission to create system factions.',
+            content: '❌ You need Administrator permission to use this command.',
             ephemeral: true,
           });
           return;
@@ -94,6 +105,9 @@ export default {
           break;
         case 'create-faction':
           await handleCreateSystemFaction(interaction, guildId);
+          break;
+        case 'disband-faction':
+          await handleDisbandFaction(interaction, guildId);
           break;
         default:
           await interaction.editReply({
@@ -259,7 +273,7 @@ async function handleCreateSystemFaction(
     return;
   }
 
-  const systemOwnerId = interaction.user.id;
+  const systemOwnerId = 'EVENTFACTION';
   const initialDeposit = 0;
 
   const creationResult = await factionManager.createFaction(
@@ -285,6 +299,12 @@ async function handleCreateSystemFaction(
       $set: {
         isSystemFaction: true,
         createdBy: interaction.user.id,
+        ownerId: systemOwnerId,
+        officers: [],
+        members: [],
+        totalMembersEver: 0,
+        peakMemberCount: 0,
+        membersWhoGaveXp: [],
       },
     }
   );
@@ -302,3 +322,66 @@ async function handleCreateSystemFaction(
   );
 }
 
+async function handleDisbandFaction(
+  interaction: ChatInputCommandInteraction,
+  guildId: string
+): Promise<void> {
+  const factionRole = interaction.options.getRole('faction_role', true);
+
+  if (!interaction.guild) {
+    await interaction.editReply({
+      content: '❌ This command can only be used in a server.',
+    });
+    return;
+  }
+
+  const faction = await database.factions.findOne({
+    guildId,
+    roleId: factionRole.id,
+    disbanded: { $ne: true },
+  });
+
+  if (!faction) {
+    await interaction.editReply({
+      content: '❌ No active faction is linked to that role.',
+    });
+    return;
+  }
+
+  // Mark faction as disbanded
+  await database.factions.updateOne(
+    { id: faction.id, guildId },
+    {
+      $set: {
+        disbanded: true,
+        disbandedAt: new Date(),
+        disbandedReason: 'manual',
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  // Clear currentFaction for users in this faction
+  await database.users.updateMany(
+    { guildId, currentFaction: faction.id },
+    {
+      $set: {
+        currentFaction: null,
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  // Attempt to remove Discord resources
+  try {
+    await discordResourceManager.deleteFactionResources(interaction.guild, faction.roleId, faction.channelId);
+  } catch (error) {
+    logger.warn(`Failed to delete resources for faction ${faction.id}:`, error);
+  }
+
+  await interaction.editReply({
+    content: `✅ Faction **${faction.name}** has been disbanded and its members unlinked.`,
+  });
+
+  logger.info(`Faction ${faction.id} disbanded by ${interaction.user.id} in guild ${guildId}`);
+}
