@@ -77,6 +77,19 @@ export default {
         return;
       }
 
+      // Verify the date didn't roll over (e.g., Feb 30 → Mar 1)
+      const [year, month, day] = dateInput.split('-').map(Number);
+      if (
+        creditedAt.getUTCFullYear() !== year ||
+        creditedAt.getUTCMonth() + 1 !== month ||
+        creditedAt.getUTCDate() !== day
+      ) {
+        await interaction.editReply({
+          content: '❌ Invalid date. Please provide a valid calendar date.',
+        });
+        return;
+      }
+
       const durationMs = minutes * 60 * 1000;
 
       // Fetch user document
