@@ -191,6 +191,7 @@ class ConfigManager {
       admin: {
         staffRoleIds: [],
         auditLogChannelId: '',
+        eventManagerRoleIds: [],
       },
 
       quests: {

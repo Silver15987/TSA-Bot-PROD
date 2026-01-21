@@ -72,6 +72,17 @@ export default {
             .setDescription('Text/Announcement channel ID for faction announcements')
             .setRequired(true)
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('set-event-manager-roles')
+        .setDescription('Set roles that can use event management commands')
+        .addStringOption(option =>
+          option
+            .setName('role_ids')
+            .setDescription('Comma-separated list of role IDs (e.g., 123,456,789)')
+            .setRequired(true)
+        )
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -105,6 +116,9 @@ export default {
           break;
         case 'set-announcement-channel':
           await handleSetAnnouncementChannel(interaction, guildId);
+          break;
+        case 'set-event-manager-roles':
+          await handleSetEventManagerRoles(interaction, guildId);
           break;
         case 'view':
           await handleView(interaction, guildId);
@@ -519,6 +533,68 @@ async function handleSetAnnouncementChannel(
     logger.info(`Faction announcement channel set to ${channelId} for guild ${guildId} by ${interaction.user.id}`);
   } catch (error) {
     logger.error('Error setting announcement channel:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle /config set-event-manager-roles
+ */
+async function handleSetEventManagerRoles(
+  interaction: ChatInputCommandInteraction,
+  guildId: string
+): Promise<void> {
+  const roleIdsInput = interaction.options.getString('role_ids', true);
+
+  try {
+    const roleIds = roleIdsInput.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+    if (roleIds.length === 0) {
+      await interaction.editReply({
+        content: '❌ Please provide at least one valid role ID.',
+      });
+      return;
+    }
+
+    const invalidRoles: string[] = [];
+    for (const roleId of roleIds) {
+      const role = await interaction.guild?.roles.fetch(roleId).catch(() => null);
+      if (!role) {
+        invalidRoles.push(roleId);
+      }
+    }
+
+    if (invalidRoles.length > 0) {
+      await interaction.editReply({
+        content: `❌ The following role IDs are invalid: ${invalidRoles.join(', ')}\n\nPlease check the role IDs and try again.`,
+      });
+      return;
+    }
+
+    await database.serverConfigs.updateOne(
+      { guildId },
+      {
+        $set: {
+          'admin.eventManagerRoleIds': roleIds,
+          updatedAt: new Date(),
+          updatedBy: interaction.user.id,
+        },
+        $inc: { version: 1 },
+      },
+      { upsert: true }
+    );
+
+    await configManager.reloadConfig(guildId);
+
+    await interaction.editReply({
+      content: `✅ Event manager roles have been set!\n\n` +
+        `**Roles:** ${roleIds.map(id => `<@&${id}>`).join(', ')}\n\n` +
+        `Users with these roles (or staff roles, if none are set) can use event commands.`,
+    });
+
+    logger.info(`Event manager roles set for guild ${guildId} by ${interaction.user.id}: ${roleIds.join(', ')}`);
+  } catch (error) {
+    logger.error('Error setting event manager roles:', error);
     throw error;
   }
 }
