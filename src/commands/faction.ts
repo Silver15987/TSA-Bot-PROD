@@ -259,13 +259,42 @@ async function handleCreate(interaction: ChatInputCommandInteraction): Promise<v
       return;
     }
 
-    // Check if faction name already exists
+    // Check if faction name already exists (active factions)
     const nameExists = await factionManager.factionNameExists(name, guildId);
     if (nameExists) {
       await interaction.editReply({
         embeds: [factionFormatter.createErrorEmbed(
           'Name Already Taken',
           `A faction with the name "${name}" already exists.`
+        )],
+      });
+      return;
+    }
+
+    // Check if a disbanded faction with this name exists (prevent reuse to avoid confusion/issues)
+    const disbandedFaction = await database.factions.findOne({
+      name: { $regex: new RegExp(`^${name}$`, 'i') },
+      guildId,
+      disbanded: true
+    });
+
+    if (disbandedFaction) {
+      await interaction.editReply({
+        embeds: [factionFormatter.createErrorEmbed(
+          'Name Unavailable',
+          `A disbanded faction with the name "${name}" already exists. Please choose a different name.`
+        )],
+      });
+      return;
+    }
+
+    // Check if Discord resources already exist
+    const existingResources = await discordResourceManager.checkResourcesExistByName(guild, name);
+    if (existingResources.roleExists || existingResources.channelExists) {
+      await interaction.editReply({
+        embeds: [factionFormatter.createErrorEmbed(
+          'Resources Exist',
+          `Discord resources for "${name}" already exist (Role: ${existingResources.roleExists ? 'Yes' : 'No'}, Channel: ${existingResources.channelExists ? 'Yes' : 'No'}). Please contact an administrator to clean them up.`
         )],
       });
       return;
@@ -1375,7 +1404,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
 
     // Build embed
     const embedColor = factionMultiplier > 1.0 ? 0x00ff00 : factionMultiplier < 1.0 ? 0xff0000 : 0x3498db;
-    
+
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(`🏴 Faction Status: ${faction.name}`)
