@@ -226,6 +226,14 @@ async function handleAddToFaction(
   });
 }
 
+/**
+ * Create a new system (event) faction: provision a Discord role and voice channel, create the faction record, and mark it as a system faction in the database.
+ *
+ * Performs validation (server context, name length, factions enabled, unique name, and absence of conflicting Discord resources). If validation passes, it creates the Discord resources, creates the faction via the faction manager, marks the faction as a system faction with metadata, and replies to the interaction with success or error messages. On faction creation failure the created Discord resources are cleaned up.
+ *
+ * @param interaction - The command interaction that triggered the creation (used for options and replies)
+ * @param guildId - The ID of the guild where the faction will be created
+ */
 async function handleCreateSystemFaction(
   interaction: ChatInputCommandInteraction,
   guildId: string
@@ -335,6 +343,17 @@ async function handleCreateSystemFaction(
   );
 }
 
+/**
+ * Disbands a system or event faction, unlinks its members, and removes associated Discord resources.
+ *
+ * Marks the faction as disbanded in the database, clears `currentFaction` for affected users, attempts
+ * to delete the faction's role and channel (and any extra resources with the same name), edits the
+ * command reply with the outcome, and logs the action. Failures to delete Discord resources are caught
+ * and logged as warnings; database updates remain applied.
+ *
+ * @param interaction - The command interaction used to obtain options and send/edit replies
+ * @param guildId - The ID of the guild where the faction exists
+ */
 async function handleDisbandFaction(
   interaction: ChatInputCommandInteraction,
   guildId: string

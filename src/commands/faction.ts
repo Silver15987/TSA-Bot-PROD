@@ -212,7 +212,13 @@ export default {
 };
 
 /**
- * Handle /faction create
+ * Create a new faction in response to the `/faction create` command.
+ *
+ * Validates server configuration, faction name, user eligibility and funds; creates Discord role and channel,
+ * persists the faction, deducts the creation fee and initial deposit from the user, records transactions,
+ * assigns the faction role to the creator, announces the creation, and replies to the interaction with success or error embeds.
+ *
+ * @param interaction - The command interaction that invoked the create flow
  */
 async function handleCreate(interaction: ChatInputCommandInteraction): Promise<void> {
   const name = interaction.options.getString('name', true);
@@ -1370,7 +1376,13 @@ async function handleLedger(interaction: ChatInputCommandInteraction): Promise<v
 }
 
 /**
- * Handle /faction status
+ * Display the requesting user's faction status as an embed.
+ *
+ * Looks up the command user's faction and sends an embed containing faction level, member count,
+ * treasury, XP, coin multiplier, and recent activity (daily/weekly quests and total VC time).
+ * If the user is not in a faction or the faction cannot be found, replies with an appropriate error message.
+ *
+ * @param interaction - The ChatInputCommandInteraction for the invoking user
  */
 async function handleStatus(interaction: ChatInputCommandInteraction): Promise<void> {
   const userId = interaction.user.id;
