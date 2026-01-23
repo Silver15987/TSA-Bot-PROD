@@ -212,7 +212,13 @@ export default {
 };
 
 /**
- * Handle /faction create
+ * Create a new faction in response to the `/faction create` command.
+ *
+ * Validates server configuration, faction name, user eligibility and funds; creates Discord role and channel,
+ * persists the faction, deducts the creation fee and initial deposit from the user, records transactions,
+ * assigns the faction role to the creator, announces the creation, and replies to the interaction with success or error embeds.
+ *
+ * @param interaction - The command interaction that invoked the create flow
  */
 async function handleCreate(interaction: ChatInputCommandInteraction): Promise<void> {
   const name = interaction.options.getString('name', true);
@@ -259,13 +265,42 @@ async function handleCreate(interaction: ChatInputCommandInteraction): Promise<v
       return;
     }
 
-    // Check if faction name already exists
+    // Check if faction name already exists (active factions)
     const nameExists = await factionManager.factionNameExists(name, guildId);
     if (nameExists) {
       await interaction.editReply({
         embeds: [factionFormatter.createErrorEmbed(
           'Name Already Taken',
           `A faction with the name "${name}" already exists.`
+        )],
+      });
+      return;
+    }
+
+    // Check if a disbanded faction with this name exists (prevent reuse to avoid confusion/issues)
+    const disbandedFaction = await database.factions.findOne({
+      name: { $regex: new RegExp(`^${name}$`, 'i') },
+      guildId,
+      disbanded: true
+    });
+
+    if (disbandedFaction) {
+      await interaction.editReply({
+        embeds: [factionFormatter.createErrorEmbed(
+          'Name Unavailable',
+          `A disbanded faction with the name "${name}" already exists. Please choose a different name.`
+        )],
+      });
+      return;
+    }
+
+    // Check if Discord resources already exist
+    const existingResources = await discordResourceManager.checkResourcesExistByName(guild, name);
+    if (existingResources.roleExists || existingResources.channelExists) {
+      await interaction.editReply({
+        embeds: [factionFormatter.createErrorEmbed(
+          'Resources Exist',
+          `Discord resources for "${name}" already exist (Role: ${existingResources.roleExists ? 'Yes' : 'No'}, Channel: ${existingResources.channelExists ? 'Yes' : 'No'}). Please contact an administrator to clean them up.`
         )],
       });
       return;
@@ -1341,7 +1376,13 @@ async function handleLedger(interaction: ChatInputCommandInteraction): Promise<v
 }
 
 /**
- * Handle /faction status
+ * Display the requesting user's faction status as an embed.
+ *
+ * Looks up the command user's faction and sends an embed containing faction level, member count,
+ * treasury, XP, coin multiplier, and recent activity (daily/weekly quests and total VC time).
+ * If the user is not in a faction or the faction cannot be found, replies with an appropriate error message.
+ *
+ * @param interaction - The ChatInputCommandInteraction for the invoking user
  */
 async function handleStatus(interaction: ChatInputCommandInteraction): Promise<void> {
   const userId = interaction.user.id;
@@ -1375,7 +1416,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
 
     // Build embed
     const embedColor = factionMultiplier > 1.0 ? 0x00ff00 : factionMultiplier < 1.0 ? 0xff0000 : 0x3498db;
-    
+
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(`🏴 Faction Status: ${faction.name}`)

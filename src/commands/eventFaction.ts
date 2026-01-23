@@ -226,6 +226,14 @@ async function handleAddToFaction(
   });
 }
 
+/**
+ * Create a new system (event) faction: provision a Discord role and voice channel, create the faction record, and mark it as a system faction in the database.
+ *
+ * Performs validation (server context, name length, factions enabled, unique name, and absence of conflicting Discord resources). If validation passes, it creates the Discord resources, creates the faction via the faction manager, marks the faction as a system faction with metadata, and replies to the interaction with success or error messages. On faction creation failure the created Discord resources are cleaned up.
+ *
+ * @param interaction - The command interaction that triggered the creation (used for options and replies)
+ * @param guildId - The ID of the guild where the faction will be created
+ */
 async function handleCreateSystemFaction(
   interaction: ChatInputCommandInteraction,
   guildId: string
@@ -264,6 +272,15 @@ async function handleCreateSystemFaction(
     return;
   }
 
+  // Check if Discord resources already exist
+  const existingResources = await discordResourceManager.checkResourcesExistByName(interaction.guild, name);
+  if (existingResources.roleExists || existingResources.channelExists) {
+    await interaction.editReply({
+      content: `❌ Discord resources for **${name}** already exist (Role: ${existingResources.roleExists ? 'Yes' : 'No'}, Channel: ${existingResources.channelExists ? 'Yes' : 'No'}). Please manually delete them or choose a different name.`,
+    });
+    return;
+  }
+
   // Create Discord resources (role + VC channel)
   const resources = await discordResourceManager.createFactionResources(interaction.guild, name);
   if (!resources) {
@@ -273,6 +290,7 @@ async function handleCreateSystemFaction(
     return;
   }
 
+  /* new event driven function for adding a new faction */
   const systemOwnerId = 'EVENTFACTION';
   const initialDeposit = 0;
 
@@ -286,8 +304,11 @@ async function handleCreateSystemFaction(
   );
 
   if (!creationResult.success || !creationResult.factionId) {
+    // Cleanup orphaned resources if database creation fails
+    await discordResourceManager.deleteFactionResources(interaction.guild, resources.roleId, resources.channelId);
+
     await interaction.editReply({
-      content: `❌ Failed to create faction: ${creationResult.error || 'Unknown error'}`,
+      content: `❌ Failed to create faction: ${creationResult.error || 'Unknown error'} (Resources cleaned up)`,
     });
     return;
   }
@@ -322,6 +343,17 @@ async function handleCreateSystemFaction(
   );
 }
 
+/**
+ * Disbands a system or event faction, unlinks its members, and removes associated Discord resources.
+ *
+ * Marks the faction as disbanded in the database, clears `currentFaction` for affected users, attempts
+ * to delete the faction's role and channel (and any extra resources with the same name), edits the
+ * command reply with the outcome, and logs the action. Failures to delete Discord resources are caught
+ * and logged as warnings; database updates remain applied.
+ *
+ * @param interaction - The command interaction used to obtain options and send/edit replies
+ * @param guildId - The ID of the guild where the faction exists
+ */
 async function handleDisbandFaction(
   interaction: ChatInputCommandInteraction,
   guildId: string
@@ -335,15 +367,31 @@ async function handleDisbandFaction(
     return;
   }
 
+  // Find faction by role ID, including disbanded ones to check status
   const faction = await database.factions.findOne({
     guildId,
     roleId: factionRole.id,
-    disbanded: { $ne: true },
   });
 
   if (!faction) {
     await interaction.editReply({
-      content: '❌ No active faction is linked to that role.',
+      content: '❌ No faction found linked to that role.',
+    });
+    return;
+  }
+
+  // Check if already disbanded
+  if (faction.disbanded) {
+    await interaction.editReply({
+      content: `❌ Faction **${faction.name}** is already disbanded.`,
+    });
+    return;
+  }
+
+  // Check if it is a system faction
+  if (!faction.isSystemFaction && faction.ownerId !== 'EVENTFACTION') {
+    await interaction.editReply({
+      content: '❌ You can only disband system/event factions with this command.',
     });
     return;
   }
@@ -374,7 +422,22 @@ async function handleDisbandFaction(
 
   // Attempt to remove Discord resources
   try {
+    // Delete linked resources
     await discordResourceManager.deleteFactionResources(interaction.guild, faction.roleId, faction.channelId);
+
+    // Check for and delete extra orphaned resources with same name
+    const extraResources = await discordResourceManager.checkResourcesExistByName(interaction.guild, faction.name);
+    if (extraResources.roleExists || extraResources.channelExists) {
+      if (extraResources.roleId && extraResources.roleId !== faction.roleId) {
+        const role = await interaction.guild.roles.fetch(extraResources.roleId).catch(() => null);
+        if (role) await role.delete('Cleanup extra faction resources');
+      }
+      if (extraResources.channelId && extraResources.channelId !== faction.channelId) {
+        const channel = await interaction.guild.channels.fetch(extraResources.channelId).catch(() => null);
+        if (channel) await channel.delete('Cleanup extra faction resources');
+      }
+    }
+
   } catch (error) {
     logger.warn(`Failed to delete resources for faction ${faction.id}:`, error);
   }

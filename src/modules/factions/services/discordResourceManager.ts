@@ -202,6 +202,52 @@ export class DiscordResourceManager {
   }
 
   /**
+   * Check if Discord resources exist by name
+   */
+  async checkResourcesExistByName(
+    guild: Guild,
+    factionName: string
+  ): Promise<{
+    roleId?: string;
+    channelId?: string;
+    roleExists: boolean;
+    channelExists: boolean;
+  }> {
+    try {
+      // Ensure roles are fetched
+      await guild.roles.fetch();
+      const role = guild.roles.cache.find(r => r.name === factionName);
+
+      // Ensure channels are fetched
+      await guild.channels.fetch();
+      const config = configManager.getConfig(guild.id);
+
+      let channel;
+      if (config.factions.factionCategoryId) {
+        channel = guild.channels.cache.find(
+          c =>
+            c.parentId === config.factions.factionCategoryId &&
+            c.name === `${factionName} HQ` &&
+            c.type === ChannelType.GuildVoice
+        );
+      }
+
+      return {
+        roleId: role?.id,
+        channelId: channel?.id,
+        roleExists: !!role,
+        channelExists: !!channel,
+      };
+    } catch (error) {
+      logger.error('Failed to check if faction resources exist by name:', error);
+      return {
+        roleExists: false,
+        channelExists: false,
+      };
+    }
+  }
+
+  /**
    * Generate random color for faction role
    */
   private generateRandomColor(): number {
