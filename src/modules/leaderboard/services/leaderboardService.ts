@@ -194,7 +194,11 @@ export class LeaderboardService {
 
       // Query factions sorted by treasury
       const factions = await database.factions
-        .find({ guildId, treasury: { $gt: 0 } })
+        .find({ 
+          guildId, 
+          treasury: { $gt: 0 },
+          disbanded: { $ne: true } 
+         })
         .sort({ treasury: -1 })
         .limit(this.LEADERBOARD_LIMIT)
         .toArray();
