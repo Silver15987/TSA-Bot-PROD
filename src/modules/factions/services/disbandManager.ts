@@ -59,6 +59,7 @@ export class DisbandManager {
         { id: factionId, guildId },
         {
           $set: {
+            name: `${faction.name}-disbanded-${Date.now()}`,
             disbanded: true,
             disbandedAt: new Date(),
             disbandedReason: reason,
