@@ -401,6 +401,7 @@ async function handleDisbandFaction(
     { id: faction.id, guildId },
     {
       $set: {
+        name: `${faction.name}-disbanded-${Date.now()}`,
         disbanded: true,
         disbandedAt: new Date(),
         disbandedReason: 'manual',
