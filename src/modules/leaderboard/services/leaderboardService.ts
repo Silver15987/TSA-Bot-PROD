@@ -248,19 +248,32 @@ export class LeaderboardService {
     guildId: string
   ): Promise<EventFactionLeaderboardEntry[]> {
     try {
-      logger.info(`Calculating event faction rankings for guild ${guildId}`);
+      const guildIdStr = String(guildId);
+      logger.info(`Calculating event faction rankings for guild ${guildIdStr}`);
 
+      // Match guildId as string or number (Cosmos/DB may store either).
+      // Fetch without DB sort so factions with totalVcTime 0 or missing are included
+      // (Cosmos sort/index can exclude or mishandle them); sort in memory instead.
       const factions = await database.factions
         .find({
-          guildId,
-          ownerId: 'EVENTFACTION',
-          disbanded: { $ne: true },
+          $and: [
+            {
+              $or: [
+                { guildId: guildIdStr },
+                { guildId: { $exists: true }, $expr: { $eq: [{ $toString: '$guildId' }, guildIdStr] } },
+              ],
+            },
+            { ownerId: 'EVENTFACTION' },
+            { disbanded: { $ne: true } },
+          ],
         })
-        .sort({ totalVcTime: -1 })
-        .limit(this.EVENT_FACTION_RANKINGS_LIMIT)
+        .limit(this.EVENT_FACTION_RANKINGS_LIMIT * 2)
         .toArray();
 
-      const entries: EventFactionLeaderboardEntry[] = factions.map((faction, index) => ({
+      factions.sort((a, b) => (b.totalVcTime ?? 0) - (a.totalVcTime ?? 0));
+      const limited = factions.slice(0, this.EVENT_FACTION_RANKINGS_LIMIT);
+
+      const entries: EventFactionLeaderboardEntry[] = limited.map((faction, index) => ({
         factionId: faction.id,
         factionName: faction.name,
         vcTimeMs: faction.totalVcTime ?? 0,

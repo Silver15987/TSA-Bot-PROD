@@ -32,6 +32,9 @@ export default {
       }
 
       if (result.entries.length === 0) {
+        logger.warn(
+          `Event leaderboard: no event factions for guildId=${guildId} (server: ${interaction.guild?.name ?? 'unknown'})`
+        );
         await interaction.editReply({
           embeds: [
             createErrorEmbed(
