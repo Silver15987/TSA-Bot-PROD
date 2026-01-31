@@ -255,7 +255,6 @@ export class LeaderboardService {
           guildId,
           ownerId: 'EVENTFACTION',
           disbanded: { $ne: true },
-          totalVcTime: { $gte: 0 },
         })
         .sort({ totalVcTime: -1 })
         .limit(this.EVENT_FACTION_RANKINGS_LIMIT)
@@ -264,7 +263,7 @@ export class LeaderboardService {
       const entries: EventFactionLeaderboardEntry[] = factions.map((faction, index) => ({
         factionId: faction.id,
         factionName: faction.name,
-        vcTimeMs: faction.totalVcTime,
+        vcTimeMs: faction.totalVcTime ?? 0,
         rank: index + 1,
       }));
 
@@ -303,6 +302,14 @@ export class LeaderboardService {
    */
   async invalidateFactionRankings(guildId: string): Promise<void> {
     const cacheKey = cacheService.buildFactionRankingsKey(guildId);
+    await cacheService.invalidate(cacheKey);
+  }
+
+  /**
+   * Invalidate cache for event faction rankings
+   */
+  async invalidateEventFactionRankings(guildId: string): Promise<void> {
+    const cacheKey = cacheService.buildEventFactionRankingsKey(guildId);
     await cacheService.invalidate(cacheKey);
   }
 }

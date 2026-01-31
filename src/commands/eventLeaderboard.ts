@@ -23,7 +23,13 @@ export default {
 
       const guildId = interaction.guildId;
 
-      const result = await leaderboardService.getEventFactionRankings(guildId);
+      let result = await leaderboardService.getEventFactionRankings(guildId);
+
+      // If empty, invalidate cache and retry once (handles stale empty cache)
+      if (result.entries.length === 0) {
+        await leaderboardService.invalidateEventFactionRankings(guildId);
+        result = await leaderboardService.getEventFactionRankings(guildId);
+      }
 
       if (result.entries.length === 0) {
         await interaction.editReply({
