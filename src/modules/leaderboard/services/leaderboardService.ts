@@ -3,6 +3,7 @@ import {
   UserLeaderboardEntry,
   FactionMemberEntry,
   FactionLeaderboardEntry,
+  EventFactionLeaderboardEntry,
   PersonalLeaderboardType,
   FactionMemberLeaderboardType,
   LeaderboardResult,
@@ -80,11 +81,11 @@ export class LeaderboardService {
   }
 
   /**
-   * Get event faction rankings (event factions only, treasury-based)
+   * Get event faction rankings (event factions only, VC time-based)
    */
   async getEventFactionRankings(
     guildId: string
-  ): Promise<LeaderboardResult<FactionLeaderboardEntry>> {
+  ): Promise<LeaderboardResult<EventFactionLeaderboardEntry>> {
     const cacheKey = cacheService.buildEventFactionRankingsKey(guildId);
 
     const { data, fromCache } = await cacheService.getOrCalculate(
@@ -241,11 +242,11 @@ export class LeaderboardService {
   }
 
   /**
-   * Calculate event faction rankings from database (event factions only, treasury-based)
+   * Calculate event faction rankings from database (event factions only, VC time-based)
    */
   private async calculateEventFactionRankings(
     guildId: string
-  ): Promise<FactionLeaderboardEntry[]> {
+  ): Promise<EventFactionLeaderboardEntry[]> {
     try {
       logger.info(`Calculating event faction rankings for guild ${guildId}`);
 
@@ -254,16 +255,16 @@ export class LeaderboardService {
           guildId,
           ownerId: 'EVENTFACTION',
           disbanded: { $ne: true },
-          treasury: { $gte: 0 },
+          totalVcTime: { $gte: 0 },
         })
-        .sort({ treasury: -1 })
+        .sort({ totalVcTime: -1 })
         .limit(this.EVENT_FACTION_RANKINGS_LIMIT)
         .toArray();
 
-      const entries: FactionLeaderboardEntry[] = factions.map((faction, index) => ({
+      const entries: EventFactionLeaderboardEntry[] = factions.map((faction, index) => ({
         factionId: faction.id,
         factionName: faction.name,
-        treasury: faction.treasury,
+        vcTimeMs: faction.totalVcTime,
         rank: index + 1,
       }));
 

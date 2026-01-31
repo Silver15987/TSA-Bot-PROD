@@ -189,10 +189,10 @@ export class CacheService {
   }
 
   /**
-   * Build cache key for event faction rankings
+   * Build cache key for event faction rankings (VC time-based)
    */
   buildEventFactionRankingsKey(guildId: string): string {
-    return `leaderboard:${guildId}:event_faction_rankings:treasury`;
+    return `leaderboard:${guildId}:event_faction_rankings:vctime`;
   }
 }
 

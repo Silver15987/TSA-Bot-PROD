@@ -1,11 +1,12 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { leaderboardService } from '../modules/leaderboard/services/leaderboardService';
 import logger from '../core/logger';
+import { formatHoursMinutes } from '../utils/timeFormatters';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('event-leaderboard')
-    .setDescription('View event factions ranked by treasury')
+    .setDescription('View event factions ranked by VC hours')
     .setDMPermission(false),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -42,7 +43,7 @@ export default {
       const memberResult = await leaderboardService.getFactionMemberLeaderboard(
         guildId,
         topFaction.factionId,
-        'deposits'
+        'vctime'
       );
       top3Members = memberResult.entries.slice(0, 3).map((e) => ({
         username: e.username,
@@ -50,23 +51,23 @@ export default {
         rank: e.rank,
       }));
 
-      // Spotlight: top faction + its top 3 by deposits
+      // Spotlight: top faction + its top 3 by VC time
       let spotlight = `**#1 — ${topFaction.factionName}**\n`;
-      spotlight += `💰 Treasury: **${topFaction.treasury.toLocaleString()}** coins\n`;
+      spotlight += `⏱️ VC time: **${formatHoursMinutes(topFaction.vcTimeMs)}**\n`;
       if (top3Members.length > 0) {
-        spotlight += `**Top 3 contributors:**\n`;
+        spotlight += `**Top 3 by VC time:**\n`;
         for (const m of top3Members) {
-          spotlight += `${m.rank}. ${m.username} — **${m.value.toLocaleString()}** deposited\n`;
+          spotlight += `${m.rank}. ${m.username} — **${formatHoursMinutes(m.value)}**\n`;
         }
       } else {
-        spotlight += `*No member deposits yet.*\n`;
+        spotlight += `*No member VC time yet.*\n`;
       }
 
       // Full event faction list
       let fullList = `\n**All event factions**\n`;
       for (const entry of result.entries) {
         const medal = this.getMedal(entry.rank);
-        fullList += `${medal} **${entry.rank}.** ${entry.factionName} — **${entry.treasury.toLocaleString()}** coins\n`;
+        fullList += `${medal} **${entry.rank}.** ${entry.factionName} — **${formatHoursMinutes(entry.vcTimeMs)}**\n`;
       }
 
       const description = spotlight + fullList;

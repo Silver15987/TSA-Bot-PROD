@@ -33,6 +33,16 @@ export interface FactionLeaderboardEntry {
 }
 
 /**
+ * Leaderboard entry for event faction rankings (VC time-based)
+ */
+export interface EventFactionLeaderboardEntry {
+  factionId: string;
+  factionName: string;
+  vcTimeMs: number;
+  rank: number;
+}
+
+/**
  * Personal leaderboard types
  */
 export type PersonalLeaderboardType = 'coins' | 'vctime' | 'streak';
