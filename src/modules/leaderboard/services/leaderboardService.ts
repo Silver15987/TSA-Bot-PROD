@@ -16,6 +16,7 @@ import logger from '../../../core/logger';
  */
 export class LeaderboardService {
   private readonly LEADERBOARD_LIMIT = 10;
+  private readonly EVENT_FACTION_RANKINGS_LIMIT = 15;
 
   /**
    * Get personal leaderboard (coins, vctime, or streak)
@@ -69,6 +70,26 @@ export class LeaderboardService {
     const { data, fromCache } = await cacheService.getOrCalculate(
       cacheKey,
       () => this.calculateFactionRankings(guildId)
+    );
+
+    return {
+      entries: data,
+      total: data.length,
+      fromCache,
+    };
+  }
+
+  /**
+   * Get event faction rankings (event factions only, treasury-based)
+   */
+  async getEventFactionRankings(
+    guildId: string
+  ): Promise<LeaderboardResult<FactionLeaderboardEntry>> {
+    const cacheKey = cacheService.buildEventFactionRankingsKey(guildId);
+
+    const { data, fromCache } = await cacheService.getOrCalculate(
+      cacheKey,
+      () => this.calculateEventFactionRankings(guildId)
     );
 
     return {
@@ -211,6 +232,41 @@ export class LeaderboardService {
       return entries;
     } catch (error) {
       logger.error('Error calculating faction rankings:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Calculate event faction rankings from database (event factions only, treasury-based)
+   */
+  private async calculateEventFactionRankings(
+    guildId: string
+  ): Promise<FactionLeaderboardEntry[]> {
+    try {
+      logger.info(`Calculating event faction rankings for guild ${guildId}`);
+
+      const factions = await database.factions
+        .find({
+          guildId,
+          ownerId: 'EVENTFACTION',
+          disbanded: { $ne: true },
+          treasury: { $gte: 0 },
+        })
+        .sort({ treasury: -1 })
+        .limit(this.EVENT_FACTION_RANKINGS_LIMIT)
+        .toArray();
+
+      const entries: FactionLeaderboardEntry[] = factions.map((faction, index) => ({
+        factionId: faction.id,
+        factionName: faction.name,
+        treasury: faction.treasury,
+        rank: index + 1,
+      }));
+
+      logger.info(`Calculated ${entries.length} entries for event faction rankings`);
+      return entries;
+    } catch (error) {
+      logger.error('Error calculating event faction rankings:', error);
       return [];
     }
   }

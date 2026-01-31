@@ -187,6 +187,13 @@ export class CacheService {
   buildFactionRankingsKey(guildId: string): string {
     return `leaderboard:${guildId}:faction_rankings:treasury`;
   }
+
+  /**
+   * Build cache key for event faction rankings
+   */
+  buildEventFactionRankingsKey(guildId: string): string {
+    return `leaderboard:${guildId}:event_faction_rankings:treasury`;
+  }
 }
 
 export const cacheService = new CacheService();
