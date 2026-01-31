@@ -5,13 +5,22 @@ import logger from '../core/logger';
 export default {
   data: new SlashCommandBuilder()
     .setName('event-leaderboard')
-    .setDescription('View event factions ranked by treasury'),
+    .setDescription('View event factions ranked by treasury')
+    .setDMPermission(false),
 
   async execute(interaction: ChatInputCommandInteraction) {
     try {
+      if (!interaction.guildId || !interaction.inGuild()) {
+        await interaction.reply({
+          content: 'This command can only be used in a server.',
+          ephemeral: true,
+        });
+        return;
+      }
+
       await interaction.deferReply();
 
-      const guildId = interaction.guildId!;
+      const guildId = interaction.guildId;
 
       const result = await leaderboardService.getEventFactionRankings(guildId);
 
