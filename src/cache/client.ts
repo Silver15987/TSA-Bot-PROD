@@ -213,6 +213,33 @@ export const RedisKeys = {
 
   // Items Cache: items:user:{userId}:{guildId}
   userItems: (userId: string, guildId: string) => `items:user:${userId}:${guildId}`,
+
+  // Tournament: active state per guild
+  tournamentState: (guildId: string) => `tournament:state:${guildId}`,
+
+  // Tournament: pairings per round
+  tournamentPairings: (tournamentId: string, round: number) =>
+    `tournament:pairings:${tournamentId}:${round}`,
+
+  // Tournament: joined roster per faction
+  tournamentRosterJoined: (tournamentId: string, factionId: string) =>
+    `tournament:roster:joined:${tournamentId}:${factionId}`,
+
+  // Tournament: per-voter votes for a faction in a given round
+  tournamentVotes: (tournamentId: string, round: number, factionId: string, voterId: string) =>
+    `tournament:votes:${tournamentId}:${round}:${factionId}:${voterId}`,
+
+  // Tournament: aggregated vote totals per faction in a round
+  tournamentVoteTotals: (tournamentId: string, round: number, factionId: string) =>
+    `tournament:voteTotals:${tournamentId}:${round}:${factionId}`,
+
+  // Tournament: locked roster per faction in a round
+  tournamentLockedRoster: (tournamentId: string, round: number, factionId: string) =>
+    `tournament:lockedRoster:${tournamentId}:${round}:${factionId}`,
+
+  // Tournament: cached VC totals per user per round
+  tournamentVc: (tournamentId: string, round: number, userId: string) =>
+    `tournament:vc:${tournamentId}:${round}:${userId}`,
 };
 
 // Export singleton instance

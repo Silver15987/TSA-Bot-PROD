@@ -330,6 +330,113 @@ export interface WarDocument {
 }
 
 /**
+ * Tournament Document Schema
+ */
+export interface TournamentDocument {
+  id: string; // Unique tournament ID (e.g. tournament_timestamp_rand)
+  guildId: string; // Discord server ID
+  name: string;
+
+  // Lifecycle
+  status: 'registration' | 'active' | 'completed' | 'cancelled';
+  startedAt: Date | null;
+  completedAt: Date | null;
+
+  // Configuration
+  participantFactionIds: string[]; // FactionDocument ids
+  playersPerMatch: number;
+  timeZone: string; // e.g. 'Asia/Kolkata'
+  roundStartTimeLocal: string; // e.g. '00:00'
+  roundDurationHours: number;
+  maxRounds: number | null;
+
+  // Progress
+  currentRound: number;
+  standings: Array<{
+    factionId: string;
+    wins: number;
+    losses: number;
+    lastOpponents: string[];
+    totalTournamentVcMillis: number;
+  }>;
+  finalStandings: Array<{
+    factionId: string;
+    rank: number;
+  }>;
+
+  // Metadata
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Tournament Match Document Schema
+ */
+export interface TournamentMatchDocument {
+  id: string;
+  tournamentId: string;
+  guildId: string;
+  round: number;
+
+  // Participants
+  factionAId: string;
+  factionBId: string | null; // null for bye
+  factionARecordBefore: { wins: number; losses: number };
+  factionBRecordBefore: { wins: number; losses: number } | null;
+
+  // Rosters
+  playersPerMatch: number;
+  rosterA: string[]; // userIds, length <= playersPerMatch
+  rosterB: string[];
+  rosterLockedAt: Date | null;
+
+  // Results
+  status: 'pending' | 'in_progress' | 'completed' | 'forfeit' | 'bye';
+  roundStartAt: Date;
+  roundEndAt: Date;
+  duelResults: Array<{
+    index: number;
+    userAId: string;
+    userBId: string;
+    vcMillisA: number;
+    vcMillisB: number;
+    winner: 'A' | 'B';
+  }>;
+  winnerFactionId: string | null;
+  loserFactionId: string | null;
+  winnerScore: number | null;
+  loserScore: number | null;
+  computedAt: Date | null;
+
+  // Announcement metadata
+  resultAnnouncementMessageId: string | null;
+  bracketImageUrl: string | null;
+
+  // Voting snapshot (denormalized from Redis for history)
+  votingSnapshot: {
+    factionA: {
+      votes: Array<{
+        voterId: string;
+        votedUserIds: string[];
+      }>;
+      totals: { [userId: string]: number };
+    };
+    factionB: {
+      votes: Array<{
+        voterId: string;
+        votedUserIds: string[];
+      }>;
+      totals: { [userId: string]: number };
+    };
+  } | null;
+
+  // Metadata
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
  * Transaction Document Schema
  */
 export interface TransactionDocument {
@@ -427,6 +534,15 @@ export interface ServerConfigDocument {
         coinsMultiplier: number;
       };
     };
+  };
+
+  // Tournament Configuration
+  tournaments?: {
+    enabled: boolean;
+    announcementChannelId?: string;
+    pauseQuestsDuringTournament: boolean;
+    pauseRolesDuringTournament: boolean;
+    defaultPlayersPerMatch: number;
   };
 
   // Metadata

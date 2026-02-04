@@ -1,0 +1,192 @@
+import { database } from '../../../database/client';
+import logger from '../../../core/logger';
+import { TournamentDocument } from '../../../types/database';
+import { tournamentBracketService } from './tournamentBracketService';
+import { tournamentCacheService } from './tournamentCacheService';
+
+/**
+ * Tournament Manager
+ * High-level CRUD and lifecycle operations for tournaments.
+ */
+class TournamentManager {
+  /**
+   * Get the active tournament for a guild, if any.
+   */
+  async getActiveTournament(guildId: string): Promise<TournamentDocument | null> {
+    try {
+      return await database.tournaments.findOne({
+        guildId,
+        status: 'active',
+      });
+    } catch (error) {
+      logger.error('Failed to get active tournament:', { guildId, error });
+      return null;
+    }
+  }
+
+  /**
+   * Create a new tournament in registration state.
+   */
+  async createTournament(params: {
+    guildId: string;
+    name: string;
+    participantFactionIds: string[];
+    playersPerMatch: number;
+    createdBy: string;
+    timeZone?: string;
+  }): Promise<TournamentDocument> {
+    const now = new Date();
+
+    const tournament: TournamentDocument = {
+      id: `tournament_${Date.now()}`,
+      guildId: params.guildId,
+      name: params.name,
+      status: 'registration',
+      startedAt: null,
+      completedAt: null,
+      participantFactionIds: params.participantFactionIds,
+      playersPerMatch: params.playersPerMatch,
+      timeZone: params.timeZone || 'Asia/Kolkata',
+      roundStartTimeLocal: '00:00',
+      roundDurationHours: 24,
+      maxRounds: null,
+      currentRound: 0,
+      standings: [],
+      finalStandings: [],
+      createdBy: params.createdBy,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await database.tournaments.insertOne(tournament);
+
+    logger.info(`Created tournament "${tournament.name}" (${tournament.id}) for guild ${tournament.guildId}`);
+
+    return tournament;
+  }
+
+  /**
+   * Start a tournament: move to active and generate first round pairings.
+   */
+  async startTournament(tournament: TournamentDocument): Promise<TournamentDocument> {
+    if (tournament.status !== 'registration') {
+      throw new Error('Tournament is not in registration state');
+    }
+
+    const now = new Date();
+    const updated: TournamentDocument = {
+      ...tournament,
+      status: 'active',
+      startedAt: now,
+      currentRound: 1,
+      updatedAt: now,
+    };
+
+    await database.tournaments.updateOne(
+      { id: tournament.id, guildId: tournament.guildId },
+      {
+        $set: {
+          status: updated.status,
+          startedAt: updated.startedAt,
+          currentRound: updated.currentRound,
+          updatedAt: updated.updatedAt,
+        },
+      }
+    );
+
+    // Generate first round pairings
+    await tournamentBracketService.generatePairingsForRound(updated, 1);
+
+    // Cache state
+    await tournamentCacheService.setTournamentState(updated.guildId, {
+      tournamentId: updated.id,
+      status: updated.status,
+      currentRound: updated.currentRound,
+      standings: updated.standings,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Advance to the next round and generate new pairings.
+   */
+  async advanceToNextRound(tournament: TournamentDocument): Promise<TournamentDocument> {
+    if (tournament.status !== 'active') {
+      throw new Error('Tournament is not active');
+    }
+
+    const nextRound = tournament.currentRound + 1;
+
+    const now = new Date();
+    const updated: TournamentDocument = {
+      ...tournament,
+      currentRound: nextRound,
+      updatedAt: now,
+    };
+
+    await database.tournaments.updateOne(
+      { id: tournament.id, guildId: tournament.guildId },
+      {
+        $set: {
+          currentRound: updated.currentRound,
+          updatedAt: updated.updatedAt,
+        },
+      }
+    );
+
+    await tournamentBracketService.generatePairingsForRound(updated, nextRound);
+
+    await tournamentCacheService.setTournamentState(updated.guildId, {
+      tournamentId: updated.id,
+      status: updated.status,
+      currentRound: updated.currentRound,
+      standings: updated.standings,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Mark tournament as completed and store final standings.
+   * (For now, just set status; ranking can be handled by bracket service.)
+   */
+  async completeTournament(tournament: TournamentDocument): Promise<void> {
+    const now = new Date();
+
+    await database.tournaments.updateOne(
+      { id: tournament.id, guildId: tournament.guildId },
+      {
+        $set: {
+          status: 'completed',
+          completedAt: now,
+          updatedAt: now,
+        },
+      }
+    );
+
+    await tournamentCacheService.clearTournamentState(tournament.guildId);
+  }
+
+  /**
+   * Cancel a tournament.
+   */
+  async cancelTournament(tournament: TournamentDocument): Promise<void> {
+    const now = new Date();
+
+    await database.tournaments.updateOne(
+      { id: tournament.id, guildId: tournament.guildId },
+      {
+        $set: {
+          status: 'cancelled',
+          updatedAt: now,
+        },
+      }
+    );
+
+    await tournamentCacheService.clearTournamentState(tournament.guildId);
+  }
+}
+
+export const tournamentManager = new TournamentManager();
+

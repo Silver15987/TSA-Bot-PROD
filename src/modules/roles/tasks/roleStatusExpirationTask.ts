@@ -1,4 +1,6 @@
 import logger from '../../../core/logger';
+import { configManager } from '../../../core/configManager';
+import { database } from '../../../database/client';
 import { roleStatusManager } from '../services/roleStatusManager';
 
 let statusExpirationInterval: NodeJS.Timeout | null = null;
@@ -42,6 +44,24 @@ export function stopRoleStatusExpirationTask(): void {
  */
 async function checkExpiredStatuses(): Promise<void> {
   try {
+    // If tournaments are configured to pause roles during active tournament, skip
+    if (configManager.hasConfig()) {
+      const config = configManager.getConfig();
+      if (config.tournaments?.pauseRolesDuringTournament) {
+        const guildId = config.guildId;
+        const activeTournament = await database.tournaments.findOne({
+          guildId,
+          status: 'active',
+        });
+        if (activeTournament) {
+          logger.info(
+            `Role status expiration: Skipping run because an active tournament (${activeTournament.name}) is ongoing and pauseRolesDuringTournament=true`
+          );
+          return;
+        }
+      }
+    }
+
     const expiredCount = await roleStatusManager.checkExpiredStatuses();
     if (expiredCount > 0) {
       logger.info(`Cleaned up ${expiredCount} expired role statuses`);

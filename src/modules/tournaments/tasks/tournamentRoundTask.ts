@@ -1,0 +1,161 @@
+import cron from 'node-cron';
+import { BotClient } from '../../../core/client';
+import logger from '../../../core/logger';
+import { database } from '../../../database/client';
+import { TournamentDocument } from '../../../types/database';
+import { tournamentRosterService } from '../services/tournamentRosterService';
+import { tournamentResultService } from '../services/tournamentResultService';
+import { tournamentBracketService } from '../services/tournamentBracketService';
+
+let roundTask: cron.ScheduledTask | null = null;
+
+/**
+ * Start the tournament round task.
+ * Runs periodically and:
+ * - Locks rosters 1 hour before each IST day (23:00 IST previous day).
+ * - Computes results after the day ends.
+ * - Advances rounds automatically.
+ */
+export function startTournamentRoundTask(client: BotClient): void {
+  if (roundTask) {
+    logger.warn('Tournament round task already running');
+    return;
+  }
+
+  logger.info('Starting tournament round task (runs every 10 minutes)...');
+
+  roundTask = cron.schedule('*/10 * * * *', async () => {
+    await runTournamentRoundTask(client);
+  });
+}
+
+export function stopTournamentRoundTask(): void {
+  if (roundTask) {
+    roundTask.stop();
+    roundTask = null;
+    logger.info('Tournament round task stopped');
+  }
+}
+
+async function runTournamentRoundTask(client: BotClient): Promise<void> {
+  try {
+    const guild = client.guilds.cache.first();
+    if (!guild) {
+      logger.warn('Tournament round task: Bot is not in any guilds, skipping');
+      return;
+    }
+
+    const tournament = await database.tournaments.findOne<TournamentDocument>({
+      guildId: guild.id,
+      status: 'active',
+    });
+
+    if (!tournament) {
+      return;
+    }
+
+    if (!tournament.startedAt) {
+      logger.warn(`Tournament ${tournament.id} is active but has no startedAt; skipping`);
+      return;
+    }
+
+    const nowUtc = new Date();
+    const istNow = toIst(nowUtc);
+
+    const round = tournament.currentRound;
+    if (round <= 0) {
+      return;
+    }
+
+    // Compute IST date for this round (start day = date of startedAt in IST)
+    const startedIst = toIst(tournament.startedAt);
+    const roundDateIst = addDays(stripTime(startedIst), round - 1);
+
+    const lockTimeIst = new Date(roundDateIst.getTime() - 60 * 60 * 1000); // 1h before 00:00 => 23:00 previous day
+    const roundEndIst = new Date(roundDateIst);
+    roundEndIst.setHours(23, 59, 59, 999);
+
+    // Lock rosters if between lock time and start of round and rosters not locked
+    if (istNow >= lockTimeIst && istNow < roundDateIst) {
+      await lockRostersIfNeeded(client, tournament, round);
+    }
+
+    // Compute results and potentially advance round once round has ended
+    if (istNow >= roundEndIst) {
+      await computeResultsIfNeeded(tournament, round, roundDateIst);
+
+      // Advance to next round by generating new pairings if any participants remain
+      // Decisions about when to end the tournament are deferred to bracket logic / admin commands.
+      await tournamentBracketService.recomputeStandings(tournament);
+    }
+  } catch (error) {
+    logger.error('Error in tournament round task:', error);
+  }
+}
+
+async function lockRostersIfNeeded(
+  client: BotClient,
+  tournament: TournamentDocument,
+  round: number
+): Promise<void> {
+  const anyUnlocked = await database.tournamentMatches.findOne({
+    tournamentId: tournament.id,
+    round,
+    rosterLockedAt: null,
+  });
+
+  if (!anyUnlocked) {
+    return;
+  }
+
+  logger.info(
+    `Locking rosters for tournament ${tournament.id} round ${round}`
+  );
+
+  await tournamentRosterService.lockRostersForRound(client, tournament, round);
+}
+
+async function computeResultsIfNeeded(
+  tournament: TournamentDocument,
+  round: number,
+  roundDateIst: Date
+): Promise<void> {
+  const anyPending = await database.tournamentMatches.findOne({
+    tournamentId: tournament.id,
+    round,
+    status: { $in: ['pending', 'in_progress'] },
+  });
+
+  if (!anyPending) {
+    return;
+  }
+
+  logger.info(
+    `Computing results for tournament ${tournament.id} round ${round}`
+  );
+
+  await tournamentResultService.computeResultsForRound(
+    tournament,
+    round,
+    roundDateIst
+  );
+}
+
+/**
+ * Convert UTC Date to IST Date (UTC+5:30) without changing the underlying instant.
+ */
+function toIst(date: Date): Date {
+  const istOffsetMinutes = 5 * 60 + 30;
+  return new Date(date.getTime() + istOffsetMinutes * 60 * 1000);
+}
+
+function stripTime(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
