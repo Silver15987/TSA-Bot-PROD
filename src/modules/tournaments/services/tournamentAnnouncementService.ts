@@ -2,6 +2,7 @@ import { Client, EmbedBuilder, TextChannel, NewsChannel, VoiceChannel } from 'di
 import { configManager } from '../../../core/configManager';
 import logger from '../../../core/logger';
 import { TournamentDocument, TournamentMatchDocument } from '../../../types/database';
+import { factionManager } from '../../factions/services/factionManager';
 
 /**
  * Tournament Announcement Service
@@ -40,13 +41,26 @@ class TournamentAnnouncementService {
       .setColor(0x3498db)
       .setTimestamp();
 
+    // Resolve faction names for nicer output
+    const factions = await factionManager.getAllFactions(guildId);
+    const factionNameMap = new Map<string, string>();
+    for (const f of factions) {
+      factionNameMap.set(f.id, f.name);
+    }
+
+    const resolveName = (factionId: string | null): string => {
+      if (!factionId) return 'Unknown';
+      return factionNameMap.get(factionId) ?? factionId;
+    };
+
     if (matches.length === 0) {
       embed.setDescription('No matches were played this round.');
     } else {
       const lines: string[] = [];
       for (const m of matches) {
         if (m.status === 'bye' && m.winnerFactionId) {
-          lines.push(`**${m.winnerFactionId}** received a bye.`);
+          const winnerName = resolveName(m.winnerFactionId);
+          lines.push(`**${winnerName}** received a bye.`);
           continue;
         }
         if (!m.winnerFactionId || !m.loserFactionId) {
@@ -55,8 +69,10 @@ class TournamentAnnouncementService {
         const score = m.winnerScore !== null && m.loserScore !== null
           ? `${m.winnerScore}–${m.loserScore}`
           : 'win';
+        const winnerName = resolveName(m.winnerFactionId);
+        const loserName = resolveName(m.loserFactionId);
         lines.push(
-          `**${m.winnerFactionId}** (${score}) defeated **${m.loserFactionId}**`
+          `**${winnerName}** (${score}) defeated **${loserName}**`
         );
       }
 

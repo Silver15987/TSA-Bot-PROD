@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 import { Client } from 'discord.js';
 import { database } from '../../../database/client';
 import { configManager } from '../../../core/configManager';
@@ -233,7 +233,7 @@ class TournamentRosterService {
 
 function shuffleArrayInPlace<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = randomBytes(1)[0] % (i + 1);
+    const j = randomInt(i + 1);
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }

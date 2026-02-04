@@ -231,6 +231,7 @@ class DatabaseClient {
       await this.tournaments.createIndex({ guildId: 1, status: 1 });
       await this.tournaments.createIndex({ guildId: 1, currentRound: 1 });
 
+      await this.tournamentMatches.createIndex({ id: 1 }, { unique: true });
       await this.tournamentMatches.createIndex({ tournamentId: 1, round: 1 });
       await this.tournamentMatches.createIndex({ guildId: 1, round: 1 });
       await this.tournamentMatches.createIndex({ factionAId: 1, round: 1 });

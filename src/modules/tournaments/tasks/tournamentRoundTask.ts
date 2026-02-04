@@ -142,15 +142,38 @@ async function computeResultsIfNeeded(
 }
 
 /**
- * Convert UTC Date to IST Date (UTC+5:30) without changing the underlying instant.
+ * Convert UTC Date to an IST-local wall-clock Date encoded in UTC.
  */
 function toIst(date: Date): Date {
-  const istOffsetMinutes = 5 * 60 + 30;
-  return new Date(date.getTime() + istOffsetMinutes * 60 * 1000);
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const get = (type: string): number =>
+    Number(parts.find((p) => p.type === type)?.value ?? 0);
+
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
+  const hour = get('hour');
+  const minute = get('minute');
+  const second = get('second');
+
+  // Represent IST wall-clock time as a UTC-based Date for comparisons
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, second, 0));
 }
 
 function stripTime(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  // Strip time based on IST-local date (using UTC getters because toIst encodes IST in UTC fields)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
 }
 
 function addDays(date: Date, days: number): Date {

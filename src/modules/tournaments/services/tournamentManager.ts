@@ -116,6 +116,10 @@ class TournamentManager {
       throw new Error('Tournament is not active');
     }
 
+    if (tournament.maxRounds != null && tournament.currentRound >= tournament.maxRounds) {
+      throw new Error('Tournament has reached maximum rounds');
+    }
+
     const nextRound = tournament.currentRound + 1;
 
     const now = new Date();

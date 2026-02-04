@@ -41,7 +41,16 @@ class TournamentResultService {
 
     let total = 0;
     for (const s of sessions) {
-      total += s.duration;
+      const sessionStart = s.startTime;
+      const sessionEnd = s.endTime;
+
+      const clippedStart = sessionStart < startUtc ? startUtc : sessionStart;
+      const clippedEnd = sessionEnd > endUtc ? endUtc : sessionEnd;
+
+      const diff = clippedEnd.getTime() - clippedStart.getTime();
+      if (diff > 0) {
+        total += diff;
+      }
     }
 
     await tournamentCacheService.setVcTotal(

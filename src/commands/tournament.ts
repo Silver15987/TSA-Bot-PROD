@@ -12,6 +12,7 @@ import { memberManager } from '../modules/factions/services/memberManager';
 import { permissionService } from '../modules/admin/services/permissionService';
 import { tournamentManager } from '../modules/tournaments/services/tournamentManager';
 import { tournamentRosterService } from '../modules/tournaments/services/tournamentRosterService';
+import { tournamentCacheService } from '../modules/tournaments/services/tournamentCacheService';
 
 export default {
   data: new SlashCommandBuilder()
@@ -179,7 +180,8 @@ async function handleCreateTournament(
 
   const name = interaction.options.getString('name', true);
   const playersPerMatch =
-    interaction.options.getInteger('players_per_match') ?? 3;
+    interaction.options.getInteger('players_per_match') ??
+    (config.tournaments?.defaultPlayersPerMatch ?? 3);
 
   const config = configManager.getConfig(guildId);
   if (!config.tournaments?.enabled) {
@@ -211,13 +213,17 @@ async function handleCreateTournament(
 
   const participantFactionIds = factions.map((f) => f.id);
 
+  const timeZone = config.tournaments.timeZone;
+  const roundStartTimeLocal = config.tournaments.roundStartTimeLocal;
+
   const tournament = await tournamentManager.createTournament({
     guildId,
     name,
     participantFactionIds,
     playersPerMatch,
     createdBy: interaction.user.id,
-    timeZone: 'Asia/Kolkata',
+    timeZone,
+    roundStartTimeLocal,
   });
 
   await interaction.editReply({
@@ -257,11 +263,14 @@ async function handleStartTournament(
 
   const started = await tournamentManager.startTournament(registration);
 
+  const tz = config.tournaments.timeZone;
+  const roundStartLocal = config.tournaments.roundStartTimeLocal;
+
   await interaction.editReply({
     content:
       `✅ Tournament **${started.name}** started.\n` +
       `Current round: **${started.currentRound}**.\n` +
-      `Rosters will lock 1 hour before each round (23:00 IST).`,
+      `Rosters will lock 1 hour before each round (start time ${roundStartLocal} ${tz}).`,
   });
 }
 
@@ -562,7 +571,10 @@ async function handleBracket(
 
   // For now, this just shows latest result announcement, or falls back to /tournament view-style info.
   const latestMatch = await database.tournamentMatches.findOne(
-    { tournamentId: active.id },
+    {
+      tournamentId: active.id,
+      bracketImageUrl: { $exists: true, $ne: null },
+    },
     { sort: { round: -1 } }
   );
 

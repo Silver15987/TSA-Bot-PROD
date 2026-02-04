@@ -543,6 +543,8 @@ export interface ServerConfigDocument {
     pauseQuestsDuringTournament: boolean;
     pauseRolesDuringTournament: boolean;
     defaultPlayersPerMatch: number;
+    timeZone: string;
+    roundStartTimeLocal: string;
   };
 
   // Metadata

@@ -15,7 +15,10 @@ class TournamentBracketService {
    */
   async recomputeStandings(tournament: TournamentDocument): Promise<TournamentDocument> {
     const matches = await database.tournamentMatches
-      .find({ tournamentId: tournament.id, status: 'completed' })
+      .find({
+        tournamentId: tournament.id,
+        status: { $in: ['completed', 'bye'] },
+      })
       .toArray();
 
     const standingsMap = new Map<
@@ -44,15 +47,24 @@ class TournamentBracketService {
     matches.sort((a, b) => a.round - b.round);
 
     for (const match of matches) {
-      const { factionAId, factionBId, winnerFactionId, loserFactionId, duelResults } = match;
+      const { factionAId, factionBId, winnerFactionId, loserFactionId, duelResults, status } =
+        match;
 
-      if (!factionAId || !factionBId || !winnerFactionId || !loserFactionId) {
+      const a = factionAId ? standingsMap.get(factionAId) : undefined;
+      const b = factionBId ? standingsMap.get(factionBId) : undefined;
+
+      // Handle bye: factionA gets a win with no opponent
+      if (status === 'bye' || !factionBId) {
+        if (a) {
+          a.wins += 1;
+          a.lastOpponents.push('BYE');
+        }
         continue;
       }
 
-      const a = standingsMap.get(factionAId);
-      const b = standingsMap.get(factionBId);
-      if (!a || !b) continue;
+      if (!factionAId || !factionBId || !winnerFactionId || !loserFactionId || !a || !b) {
+        continue;
+      }
 
       if (winnerFactionId === factionAId) {
         a.wins += 1;
@@ -109,6 +121,27 @@ class TournamentBracketService {
     tournament: TournamentDocument,
     round: number
   ): Promise<BracketGenerationResult> {
+    // If matches already exist for this round, do not create duplicates
+    const existingMatches = await database.tournamentMatches
+      .find({ tournamentId: tournament.id, round })
+      .toArray();
+    if (existingMatches.length > 0) {
+      const existingPairings: TournamentPairing[] = existingMatches.map((m) => ({
+        matchId: m.id,
+        factionAId: m.factionAId,
+        factionBId: m.factionBId,
+      }));
+
+      logger.warn(
+        `Pairings already exist for tournament ${tournament.id} round ${round}, skipping regeneration`
+      );
+
+      return {
+        matches: existingMatches,
+        pairings: existingPairings,
+      };
+    }
+
     // Ensure standings are up-to-date
     const upToDateTournament = await this.recomputeStandings(tournament);
 
