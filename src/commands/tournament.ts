@@ -563,6 +563,17 @@ async function handleView(
   const state = await tournamentCacheService.getTournamentState(guildId);
   const standings = state?.standings ?? active.standings;
 
+  // Resolve faction names for nicer output
+  const factions = await factionManager.getAllFactions(guildId);
+  const factionNameMap = new Map<string, string>();
+  for (const f of factions) {
+    factionNameMap.set(f.id, f.name);
+  }
+
+  const resolveName = (factionId: string): string => {
+    return factionNameMap.get(factionId) ?? factionId;
+  };
+
   const embed = new EmbedBuilder()
     .setTitle(`Tournament Standings — ${active.name}`)
     .setDescription(`Current round: **${active.currentRound}**`);
@@ -580,7 +591,8 @@ async function handleView(
         return a.factionId.localeCompare(b.factionId);
       })
       .map((s, idx) => {
-        return `#${idx + 1} **${s.factionId}** — ${s.wins}-${s.losses}`;
+        const factionName = resolveName(s.factionId);
+        return `#${idx + 1} **${factionName}** — ${s.wins}-${s.losses}`;
       });
 
     embed.addFields({
