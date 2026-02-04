@@ -73,9 +73,19 @@ class TournamentAnnouncementService {
         );
       }
 
-      embed.setDescription(
-        lines.length > 0 ? lines.join('\n') : 'Results are not available yet.'
-      );
+      const descriptionText = lines.length > 0 ? lines.join('\n') : 'Results are not available yet.';
+      
+      // Discord embed description limit is 4096 characters
+      const MAX_DESCRIPTION_LENGTH = 4096;
+      let finalDescription = descriptionText;
+      if (descriptionText.length > MAX_DESCRIPTION_LENGTH) {
+        finalDescription = descriptionText.substring(0, MAX_DESCRIPTION_LENGTH - 20) + '... (truncated)';
+        logger.warn(
+          `Tournament round results description exceeded ${MAX_DESCRIPTION_LENGTH} characters and was truncated`
+        );
+      }
+      
+      embed.setDescription(finalDescription);
     }
 
     await channel.send({ embeds: [embed] });

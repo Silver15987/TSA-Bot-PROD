@@ -95,18 +95,29 @@ class TournamentManager {
       }
     );
 
-    // Generate first round pairings
+    // Generate first round pairings (this may update standings via recomputeStandings)
     await tournamentBracketService.generatePairingsForRound(updated, 1);
 
-    // Cache state
-    await tournamentCacheService.setTournamentState(updated.guildId, {
-      tournamentId: updated.id,
-      status: updated.status,
-      currentRound: updated.currentRound,
-      standings: updated.standings,
+    // Re-fetch tournament to get fresh standings after generatePairingsForRound
+    const freshTournament = await database.tournaments.findOne<TournamentDocument>({
+      id: tournament.id,
+      guildId: tournament.guildId,
     });
 
-    return updated;
+    if (!freshTournament) {
+      logger.error(`Failed to re-fetch tournament ${tournament.id} after generating pairings`);
+      return updated;
+    }
+
+    // Cache state with fresh standings
+    await tournamentCacheService.setTournamentState(freshTournament.guildId, {
+      tournamentId: freshTournament.id,
+      status: freshTournament.status,
+      currentRound: freshTournament.currentRound,
+      standings: freshTournament.standings,
+    });
+
+    return freshTournament;
   }
 
   /**
@@ -140,16 +151,29 @@ class TournamentManager {
       }
     );
 
+    // Generate pairings for next round (this may update standings via recomputeStandings)
     await tournamentBracketService.generatePairingsForRound(updated, nextRound);
 
-    await tournamentCacheService.setTournamentState(updated.guildId, {
-      tournamentId: updated.id,
-      status: updated.status,
-      currentRound: updated.currentRound,
-      standings: updated.standings,
+    // Re-fetch tournament to get fresh standings after generatePairingsForRound
+    const freshTournament = await database.tournaments.findOne<TournamentDocument>({
+      id: tournament.id,
+      guildId: tournament.guildId,
     });
 
-    return updated;
+    if (!freshTournament) {
+      logger.error(`Failed to re-fetch tournament ${tournament.id} after generating pairings`);
+      return updated;
+    }
+
+    // Cache state with fresh standings
+    await tournamentCacheService.setTournamentState(freshTournament.guildId, {
+      tournamentId: freshTournament.id,
+      status: freshTournament.status,
+      currentRound: freshTournament.currentRound,
+      standings: freshTournament.standings,
+    });
+
+    return freshTournament;
   }
 
   /**
