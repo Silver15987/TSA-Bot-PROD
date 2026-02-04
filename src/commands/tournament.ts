@@ -564,10 +564,16 @@ async function handleView(
   const standings = state?.standings ?? active.standings;
 
   // Resolve faction names for nicer output
-  const factions = await factionManager.getAllFactions(guildId);
+  // Query factions individually to include disbanded ones that may be in standings
   const factionNameMap = new Map<string, string>();
-  for (const f of factions) {
-    factionNameMap.set(f.id, f.name);
+  if (standings && standings.length > 0) {
+    const uniqueFactionIds = [...new Set(standings.map(s => s.factionId))];
+    for (const factionId of uniqueFactionIds) {
+      const faction = await database.factions.findOne({ id: factionId, guildId });
+      if (faction) {
+        factionNameMap.set(factionId, faction.name);
+      }
+    }
   }
 
   const resolveName = (factionId: string): string => {
