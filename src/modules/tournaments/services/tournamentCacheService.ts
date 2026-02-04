@@ -1,6 +1,6 @@
 import { redis, RedisKeys } from '../../../cache/client';
 import logger from '../../../core/logger';
-import { TournamentDocument, TournamentMatchDocument } from '../../../types/database';
+import { TournamentDocument } from '../../../types/database';
 
 /**
  * Tournament Cache Service

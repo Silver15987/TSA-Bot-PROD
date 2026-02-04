@@ -1,7 +1,5 @@
 import { randomInt } from 'crypto';
-import { Client } from 'discord.js';
 import { database } from '../../../database/client';
-import { configManager } from '../../../core/configManager';
 import logger from '../../../core/logger';
 import { TournamentDocument, TournamentMatchDocument, UserDocument } from '../../../types/database';
 import { tournamentCacheService } from './tournamentCacheService';
@@ -91,12 +89,10 @@ class TournamentRosterService {
    * Compute final locked roster for a faction in a round based on votes and auto-fill.
    */
   async lockRosterForFaction(
-    client: Client,
     tournament: TournamentDocument,
     match: TournamentMatchDocument,
     factionId: string
   ): Promise<string[]> {
-    const config = configManager.getConfig(tournament.guildId);
 
     const joined = await tournamentCacheService.getJoinedRoster(tournament.id, factionId);
 
@@ -234,7 +230,6 @@ class TournamentRosterService {
    * Lock rosters for all factions in all matches of a given round.
    */
   async lockRostersForRound(
-    client: Client,
     tournament: TournamentDocument,
     round: number
   ): Promise<void> {
@@ -244,10 +239,10 @@ class TournamentRosterService {
 
     for (const match of matches) {
       if (match.factionAId) {
-        await this.lockRosterForFaction(client, tournament, match, match.factionAId);
+        await this.lockRosterForFaction(tournament, match, match.factionAId);
       }
       if (match.factionBId) {
-        await this.lockRosterForFaction(client, tournament, match, match.factionBId);
+        await this.lockRosterForFaction(tournament, match, match.factionBId);
       }
     }
   }

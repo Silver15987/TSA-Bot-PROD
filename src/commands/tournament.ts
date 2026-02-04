@@ -3,12 +3,12 @@ import {
   ChatInputCommandInteraction,
   PermissionFlagsBits,
   EmbedBuilder,
+  GuildMember,
 } from 'discord.js';
 import { database } from '../database/client';
 import { configManager } from '../core/configManager';
 import logger from '../core/logger';
 import { factionManager } from '../modules/factions/services/factionManager';
-import { memberManager } from '../modules/factions/services/memberManager';
 import { permissionService } from '../modules/admin/services/permissionService';
 import { tournamentManager } from '../modules/tournaments/services/tournamentManager';
 import { tournamentRosterService } from '../modules/tournaments/services/tournamentRosterService';
@@ -154,14 +154,37 @@ async function ensureEventManager(
   guildId: string
 ): Promise<boolean> {
   const member = interaction.member;
-  if (!member || !('roles' in member)) {
+  if (!member) {
     await interaction.editReply({
-      content: '❌ Unable to resolve your roles. Please try again.',
+      content: '❌ Unable to resolve your member information. Please try again.',
     });
     return false;
   }
 
-  const result = permissionService.hasEventManagerPermission(member, guildId);
+  // Fetch full GuildMember if needed (interaction.member can be APIInteractionGuildMember)
+  let guildMember: GuildMember;
+  if (member instanceof GuildMember) {
+    guildMember = member;
+  } else {
+    if (!interaction.guild) {
+      await interaction.editReply({
+        content: '❌ This command can only be used in a server.',
+      });
+      return false;
+    }
+    // APIInteractionGuildMember has user.id
+    const userId = 'user' in member ? member.user.id : interaction.user.id;
+    const fetched = await interaction.guild.members.fetch(userId).catch(() => null);
+    if (!fetched) {
+      await interaction.editReply({
+        content: '❌ Unable to resolve your member information. Please try again.',
+      });
+      return false;
+    }
+    guildMember = fetched;
+  }
+
+  const result = permissionService.hasEventManagerPermission(guildMember, guildId);
   if (!result.hasPermission) {
     await interaction.editReply({
       content: `❌ ${result.reason || 'You do not have permission to use this command.'}`,

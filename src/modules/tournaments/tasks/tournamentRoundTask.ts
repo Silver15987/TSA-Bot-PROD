@@ -87,7 +87,7 @@ async function runTournamentRoundTask(client: BotClient): Promise<void> {
 
     // Lock rosters if between lock time and start of round and rosters not locked
     if (istNow >= lockTimeIst && istNow < roundDateIst) {
-      await lockRostersIfNeeded(client, tournament, round);
+      await lockRostersIfNeeded(tournament, round);
     }
 
     // Compute results and potentially advance round once round has ended
@@ -104,7 +104,6 @@ async function runTournamentRoundTask(client: BotClient): Promise<void> {
 }
 
 async function lockRostersIfNeeded(
-  client: BotClient,
   tournament: TournamentDocument,
   round: number
 ): Promise<void> {
@@ -122,7 +121,7 @@ async function lockRostersIfNeeded(
     `Locking rosters for tournament ${tournament.id} round ${round}`
   );
 
-  await tournamentRosterService.lockRostersForRound(client, tournament, round);
+  await tournamentRosterService.lockRostersForRound(tournament, round);
 }
 
 async function computeResultsIfNeeded(

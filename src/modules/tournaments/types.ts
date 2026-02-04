@@ -2,7 +2,7 @@ import { TournamentDocument, TournamentMatchDocument } from '../../types/databas
 
 export type TournamentStatus = TournamentDocument['status'];
 
-export interface TournamentStandingsEntry extends TournamentDocument['standings'][number] {}
+export type TournamentStandingsEntry = TournamentDocument['standings'][number];
 
 export interface TournamentPairing {
   matchId: string;
