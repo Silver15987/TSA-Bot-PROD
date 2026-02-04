@@ -68,6 +68,20 @@ async function runQuestScheduler(client: Client): Promise<void> {
 
       const config = configManager.getConfig();
 
+      // If tournaments are configured to pause quests during active tournament, skip heavy work
+      if (config.tournaments?.pauseQuestsDuringTournament) {
+        const activeTournament = await database.tournaments.findOne({
+          guildId: guild.id,
+          status: 'active',
+        });
+        if (activeTournament) {
+          logger.info(
+            `Quest scheduler: Skipping run because an active tournament (${activeTournament.name}) is ongoing and pauseQuestsDuringTournament=true`
+          );
+          return;
+        }
+      }
+
       // Skip if quests config is missing or disabled
       if (!config.quests || !config.quests.enabled) {
         logger.debug(`Quest scheduler: Quests disabled or not configured for guild ${guild.id}`);

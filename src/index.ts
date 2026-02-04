@@ -11,6 +11,7 @@ import { startUpkeepTask, stopUpkeepTask } from './modules/factions/tasks/upkeep
 import { upkeepManager } from './modules/factions/services/upkeepManager';
 import { startQuestScheduler, stopQuestScheduler } from './modules/quests/tasks/questScheduler';
 import { startRoleStatusExpirationTask, stopRoleStatusExpirationTask } from './modules/roles/tasks/roleStatusExpirationTask';
+import { startTournamentRoundTask, stopTournamentRoundTask } from './modules/tournaments/tasks/tournamentRoundTask';
 import logger from './core/logger';
 
 /**
@@ -42,6 +43,7 @@ async function shutdown(signal: string): Promise<void> {
     stopUpkeepTask();
     stopQuestScheduler();
     stopRoleStatusExpirationTask();
+    stopTournamentRoundTask();
     webhookServer.stop();
 
     // Give ongoing operations time to complete
@@ -196,6 +198,9 @@ async function main() {
 
       // Start role status expiration task
       startRoleStatusExpirationTask();
+
+      // Start tournament round task
+      startTournamentRoundTask(client);
 
       logger.info('All systems initialized and ready');
 

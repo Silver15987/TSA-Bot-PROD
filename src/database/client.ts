@@ -14,6 +14,8 @@ import {
   RoleUnlockConditionDocument,
   RoleActionLogDocument,
   RoleStatusDocument,
+  TournamentDocument,
+  TournamentMatchDocument,
 } from '../types/database';
 
 /**
@@ -142,6 +144,14 @@ class DatabaseClient {
     return this.getCollection<RoleStatusDocument>('roleStatuses');
   }
 
+  get tournaments(): Collection<TournamentDocument> {
+    return this.getCollection<TournamentDocument>('tournaments');
+  }
+
+  get tournamentMatches(): Collection<TournamentMatchDocument> {
+    return this.getCollection<TournamentMatchDocument>('tournamentMatches');
+  }
+
   /**
    * Create database indexes for performance
    */
@@ -215,6 +225,17 @@ class DatabaseClient {
       await this.roleStatuses.createIndex({ targetUserId: 1, expiresAt: 1 });
       await this.roleStatuses.createIndex({ targetFactionId: 1, expiresAt: 1 });
       await this.roleStatuses.createIndex({ expiresAt: 1 }); // For expiration cleanup
+
+      // Tournaments indexes
+      await this.tournaments.createIndex({ id: 1 }, { unique: true });
+      await this.tournaments.createIndex({ guildId: 1, status: 1 });
+      await this.tournaments.createIndex({ guildId: 1, currentRound: 1 });
+
+      await this.tournamentMatches.createIndex({ id: 1 }, { unique: true });
+      await this.tournamentMatches.createIndex({ tournamentId: 1, round: 1 });
+      await this.tournamentMatches.createIndex({ guildId: 1, round: 1 });
+      await this.tournamentMatches.createIndex({ factionAId: 1, round: 1 });
+      await this.tournamentMatches.createIndex({ factionBId: 1, round: 1 });
 
       logger.info('Database indexes created successfully');
     } catch (error) {

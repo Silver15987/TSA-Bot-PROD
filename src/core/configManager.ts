@@ -219,6 +219,16 @@ class ConfigManager {
         },
       },
 
+      tournaments: {
+        enabled: false,
+        announcementChannelId: '',
+        pauseQuestsDuringTournament: false,
+        pauseRolesDuringTournament: false,
+        defaultPlayersPerMatch: 3,
+        timeZone: 'Asia/Kolkata',
+        roundStartTimeLocal: '00:00',
+      },
+
       updatedAt: new Date(),
       updatedBy: 'system',
       version: 1,
