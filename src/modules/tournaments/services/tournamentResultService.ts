@@ -147,10 +147,22 @@ class TournamentResultService {
       return;
     }
 
-    const winnerFactionId =
-      winsA > winsB ? match.factionAId : match.factionBId;
-    const loserFactionId =
-      winsA > winsB ? match.factionBId : match.factionAId;
+    // Decide match winner. On ties (winsA === winsB), break the tie randomly.
+    let winnerFactionId: string;
+    let loserFactionId: string;
+
+    if (winsA > winsB) {
+      winnerFactionId = match.factionAId;
+      loserFactionId = match.factionBId;
+    } else if (winsB > winsA) {
+      winnerFactionId = match.factionBId;
+      loserFactionId = match.factionAId;
+    } else {
+      // Tie in number of duels: random tie-breaker
+      const pickA = Math.random() < 0.5;
+      winnerFactionId = pickA ? match.factionAId : match.factionBId;
+      loserFactionId = pickA ? match.factionBId : match.factionAId;
+    }
 
     await database.tournamentMatches.updateOne(
       { id: match.id, tournamentId: tournament.id },
