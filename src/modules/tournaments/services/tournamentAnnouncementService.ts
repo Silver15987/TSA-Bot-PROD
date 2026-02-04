@@ -1,4 +1,4 @@
-import { Client, EmbedBuilder, TextChannel, NewsChannel, VoiceChannel } from 'discord.js';
+import { Client, EmbedBuilder, TextChannel, NewsChannel } from 'discord.js';
 import { configManager } from '../../../core/configManager';
 import logger from '../../../core/logger';
 import { TournamentDocument, TournamentMatchDocument } from '../../../types/database';
@@ -26,12 +26,9 @@ class TournamentAnnouncementService {
     }
 
     const channel = await client.channels.fetch(channelId).catch(() => null);
-    if (
-      !channel ||
-      !(channel instanceof TextChannel || channel instanceof NewsChannel || channel instanceof VoiceChannel)
-    ) {
+    if (!channel || !channel.isTextBased()) {
       logger.warn(
-        `Tournament announcement channel ${channelId} not found or not a text/announcement channel`
+        `Tournament announcement channel ${channelId} not found or not a text-capable channel`
       );
       return;
     }

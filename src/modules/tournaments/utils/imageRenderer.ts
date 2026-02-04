@@ -7,7 +7,8 @@ import { TournamentDocument, TournamentMatchDocument } from '../../../types/data
  */
 export async function renderBracketImage(
   tournament: TournamentDocument,
-  matches: TournamentMatchDocument[]
+  matches: TournamentMatchDocument[],
+  factionNames: Map<string, string>
 ): Promise<Buffer> {
   const width = 800;
   const height = 600;
@@ -30,10 +31,15 @@ export async function renderBracketImage(
   let y = 120;
   const lineHeight = 24;
 
+  const getName = (id: string | null): string => {
+    if (!id) return 'BYE';
+    return factionNames.get(id) ?? id;
+  };
+
   for (const match of matches) {
     if (y > height - 40) break;
-    const a = match.factionAId;
-    const b = match.factionBId ?? 'BYE';
+    const a = getName(match.factionAId);
+    const b = match.factionBId ? getName(match.factionBId) : 'BYE';
     const status = match.status;
     const score =
       match.winnerScore !== null && match.loserScore !== null

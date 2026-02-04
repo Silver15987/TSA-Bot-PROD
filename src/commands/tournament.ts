@@ -179,10 +179,6 @@ async function handleCreateTournament(
   if (!(await ensureEventManager(interaction, guildId))) return;
 
   const name = interaction.options.getString('name', true);
-  const playersPerMatch =
-    interaction.options.getInteger('players_per_match') ??
-    (config.tournaments?.defaultPlayersPerMatch ?? 3);
-
   const config = configManager.getConfig(guildId);
   if (!config.tournaments?.enabled) {
     await interaction.editReply({
@@ -215,6 +211,9 @@ async function handleCreateTournament(
 
   const timeZone = config.tournaments.timeZone;
   const roundStartTimeLocal = config.tournaments.roundStartTimeLocal;
+  const playersPerMatch =
+    interaction.options.getInteger('players_per_match') ??
+    (config.tournaments.defaultPlayersPerMatch ?? 3);
 
   const tournament = await tournamentManager.createTournament({
     guildId,
@@ -262,15 +261,28 @@ async function handleStartTournament(
   }
 
   const started = await tournamentManager.startTournament(registration);
-
-  const tz = config.tournaments.timeZone;
-  const roundStartLocal = config.tournaments.roundStartTimeLocal;
+  const tz = started.timeZone;
+  const [startHourStr, startMinuteStr] = started.roundStartTimeLocal.split(':');
+  let startHour = Number(startHourStr);
+  let startMinute = Number(startMinuteStr || '0');
+  // Subtract 60 minutes for lock time
+  let lockHour = startHour;
+  let lockMinute = startMinute - 60;
+  if (lockMinute < 0) {
+    lockHour -= 1;
+    lockMinute += 60;
+  }
+  if (lockHour < 0) {
+    lockHour += 24;
+  }
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const lockTimeString = `${pad(lockHour)}:${pad(lockMinute)} ${tz}`;
 
   await interaction.editReply({
     content:
       `✅ Tournament **${started.name}** started.\n` +
       `Current round: **${started.currentRound}**.\n` +
-      `Rosters will lock 1 hour before each round (start time ${roundStartLocal} ${tz}).`,
+      `Rosters will lock 1 hour before each round (${lockTimeString}).`,
   });
 }
 

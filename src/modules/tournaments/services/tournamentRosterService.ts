@@ -110,6 +110,28 @@ class TournamentRosterService {
         factionId,
         []
       );
+
+      // Persist lock timestamp on the match as well, so the round task does not retry indefinitely
+      const rosterField =
+        match.factionAId === factionId
+          ? { rosterA: [] as string[] }
+          : match.factionBId === factionId
+          ? { rosterB: [] as string[] }
+          : null;
+
+      if (rosterField) {
+        await database.tournamentMatches.updateOne(
+          { id: match.id, tournamentId: tournament.id },
+          {
+            $set: {
+              ...rosterField,
+              rosterLockedAt: new Date(),
+              updatedAt: new Date(),
+            },
+          }
+        );
+      }
+
       return [];
     }
 

@@ -34,6 +34,7 @@ class TournamentManager {
     playersPerMatch: number;
     createdBy: string;
     timeZone?: string;
+    roundStartTimeLocal?: string;
   }): Promise<TournamentDocument> {
     const now = new Date();
 
@@ -47,7 +48,7 @@ class TournamentManager {
       participantFactionIds: params.participantFactionIds,
       playersPerMatch: params.playersPerMatch,
       timeZone: params.timeZone || 'Asia/Kolkata',
-      roundStartTimeLocal: '00:00',
+      roundStartTimeLocal: params.roundStartTimeLocal || '00:00',
       roundDurationHours: 24,
       maxRounds: null,
       currentRound: 0,

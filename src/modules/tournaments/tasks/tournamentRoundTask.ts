@@ -8,6 +8,7 @@ import { tournamentResultService } from '../services/tournamentResultService';
 import { tournamentBracketService } from '../services/tournamentBracketService';
 
 let roundTask: cron.ScheduledTask | null = null;
+let isRunning = false;
 
 /**
  * Start the tournament round task.
@@ -25,7 +26,16 @@ export function startTournamentRoundTask(client: BotClient): void {
   logger.info('Starting tournament round task (runs every 10 minutes)...');
 
   roundTask = cron.schedule('*/10 * * * *', async () => {
-    await runTournamentRoundTask(client);
+    if (isRunning) {
+      logger.warn('Tournament round task already running, skipping this tick');
+      return;
+    }
+    isRunning = true;
+    try {
+      await runTournamentRoundTask(client);
+    } finally {
+      isRunning = false;
+    }
   });
 }
 
@@ -177,8 +187,8 @@ function stripTime(date: Date): Date {
 }
 
 function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
+  const result = new Date(date.getTime());
+  result.setUTCDate(result.getUTCDate() + days);
   return result;
 }
 

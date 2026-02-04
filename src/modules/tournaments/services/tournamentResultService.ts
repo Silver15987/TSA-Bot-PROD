@@ -111,7 +111,16 @@ class TournamentResultService {
         roundDate
       );
 
-      const winner = vcMillisA > vcMillisB ? 'A' : 'B';
+      // Winner determination with explicit tie handling.
+      let winner: 'A' | 'B';
+      if (vcMillisA > vcMillisB) {
+        winner = 'A';
+      } else if (vcMillisB > vcMillisA) {
+        winner = 'B';
+      } else {
+        // Tie-breaker: random choice between A and B
+        winner = Math.random() < 0.5 ? 'A' : 'B';
+      }
 
       duelResults.push({
         index: i,
@@ -131,10 +140,17 @@ class TournamentResultService {
       else winsB += 1;
     }
 
+    if (!match.factionBId) {
+      logger.error(
+        `Match ${match.id} in tournament ${tournament.id} is missing factionBId for non-bye result computation`
+      );
+      return;
+    }
+
     const winnerFactionId =
-      winsA > winsB ? match.factionAId : match.factionBId!;
+      winsA > winsB ? match.factionAId : match.factionBId;
     const loserFactionId =
-      winsA > winsB ? match.factionBId! : match.factionAId;
+      winsA > winsB ? match.factionBId : match.factionAId;
 
     await database.tournamentMatches.updateOne(
       { id: match.id, tournamentId: tournament.id },
