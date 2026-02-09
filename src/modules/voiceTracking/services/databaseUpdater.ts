@@ -1,4 +1,6 @@
 import { database } from '../../../database/client';
+import { QuestDocument } from '../../../types/database';
+
 import logger from '../../../core/logger';
 import { sessionManager } from './sessionManager';
 import { coinCalculator } from './coinCalculator';
@@ -30,7 +32,7 @@ export class DatabaseUpdater {
       if (duration < 5000) {
         await sessionManager.deleteSession(userId, guildId);
         logger.info(
-          `Micro-transaction filtered for user ${userId}: Duration ${Math.floor(duration / 1000)}s (< 5s threshold) - not saved to database`
+          `Micro-transaction filtered for user ${userId}: Duration ${Math.floor(duration / 1000)}s (<5s threshold) - not saved to database`
         );
         return;
       }
@@ -357,6 +359,294 @@ export class DatabaseUpdater {
     const d = new Date(date);
     d.setUTCHours(0, 0, 0, 0);
     return d;
+  }
+
+  /**
+   * Bulk save sessions
+   * Optimized for high-concurrency environments to reduce DB round-trips
+   */
+  async saveSessionsBulk(sessions: VCSession[], guildId: string): Promise<void> {
+    if (sessions.length === 0) return;
+
+    const today = new Date();
+
+    // 1. Fetch all users, factions, and quests in parallel
+    const userIds = sessions.map(s => s.userId);
+    const factionIds = [...new Set(sessions.map(s => s.factionId).filter((id): id is string => !!id))];
+
+    const [users, _, activeQuests] = await Promise.all([
+      database.users.find({ id: { $in: userIds }, guildId }).toArray(),
+      database.factions.find({ id: { $in: factionIds }, guildId }).toArray(),
+      database.quests.find({
+        guildId,
+        factionId: { $in: factionIds },
+        status: { $in: ['active', 'offered'] }
+      }).toArray()
+    ]);
+
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    // Fix: Handle duplicate active quests by picking the latest one (deterministic)
+    const questMap = new Map<string, QuestDocument>();
+    for (const quest of activeQuests) {
+      if (!quest.factionId) continue;
+      const existing = questMap.get(quest.factionId);
+      if (!existing || quest.createdAt > existing.createdAt) {
+        questMap.set(quest.factionId, quest);
+      }
+    }
+
+    // Prepare bulk operations
+    const userOps: any[] = [];
+    const transactionOps: any[] = [];
+    const vcActivityOps: any[] = [];
+    const factionOps: any[] = [];
+    const questOps: any[] = [];
+    const redisUpdates: { userId: string, duration: number }[] = [];
+
+    // Aggregations
+    const factionUpdates = new Map<string, { vcTime: number, xp: number }>();
+    const questUpdates = new Map<string, { progress: number, contributors: Map<string, number> }>();
+
+    // Fix: Maintain running balances for transactions
+    const userRunningBalances = new Map<string, number>();
+    for (const user of users) {
+      userRunningBalances.set(user.id, user.coins || 0);
+    }
+    // Initialize for new users (assumed 0)
+    for (const userId of userIds) {
+      if (!userRunningBalances.has(userId)) {
+        userRunningBalances.set(userId, 0);
+      }
+    }
+
+    for (const session of sessions) {
+      try {
+        const incrementalDuration = sessionManager.calculateIncrementalDuration(session);
+        if (incrementalDuration <= 0) continue;
+
+        const coinsEarned = await coinCalculator.calculateCoins(incrementalDuration, guildId, session.userId);
+
+        // --- User Logic ---
+        const user = userMap.get(session.userId);
+
+        let dailyPeriodTime = incrementalDuration;
+        let weeklyPeriodTime = incrementalDuration;
+        let monthlyPeriodTime = incrementalDuration;
+        let dailyPeriodCoins = coinsEarned;
+        let weeklyPeriodCoins = coinsEarned;
+        let monthlyPeriodCoins = coinsEarned;
+
+        if (user && user.lastDailyReset) {
+          // Implementation note: We currently do not split time across boundaries in bulk mode.
+          // We rely on the eventual consistency of the daily reset trigger.
+        }
+
+        const userInc: any = {
+          totalVcTime: incrementalDuration,
+          coins: coinsEarned,
+          totalCoinsEarned: coinsEarned,
+          dailyVcTime: dailyPeriodTime,
+          weeklyVcTime: weeklyPeriodTime,
+          monthlyVcTime: monthlyPeriodTime,
+          dailyCoinsEarned: dailyPeriodCoins,
+          weeklyCoinsEarned: weeklyPeriodCoins,
+          monthlyCoinsEarned: monthlyPeriodCoins,
+        };
+
+        if (session.factionId) {
+          userInc.factionVcTime = incrementalDuration;
+          userInc.lifetimeFactionVcTime = incrementalDuration;
+        }
+
+        userOps.push({
+          updateOne: {
+            filter: { id: session.userId, guildId },
+            update: {
+              $inc: userInc,
+              $set: {
+                lastActiveDate: today,
+                updatedAt: today
+              },
+              $setOnInsert: {
+                lastDailyReset: today, // New users start fresh
+                lastWeeklyReset: today,
+                lastMonthlyReset: today,
+                statuses: [],
+                items: [],
+                multiplierEnabled: true,
+                role: null,
+                roleProgress: [],
+                roleCooldowns: [],
+                guildId,
+              }
+            },
+            upsert: true
+          }
+        });
+
+        // --- Transactions ---
+        // Fix: Idempotency & Running Balance
+        const currentBalance = userRunningBalances.get(session.userId) || 0;
+        const newBalance = currentBalance + coinsEarned;
+        userRunningBalances.set(session.userId, newBalance);
+
+        const txId = this.generateTransactionId();
+        transactionOps.push({
+          updateOne: {
+            filter: { id: txId },
+            update: {
+              $set: {
+                userId: session.userId,
+                type: 'vctime_earn',
+                amount: coinsEarned,
+                balanceAfter: newBalance,
+                metadata: {
+                  duration: incrementalDuration,
+                  channelId: session.channelId,
+                  factionId: session.factionId,
+                  guildId
+                },
+                createdAt: today
+              }
+            },
+            upsert: true
+          }
+        });
+
+        // --- VC Activity ---
+        const normalizedDate = this.getStartOfDay(today);
+        const channelType = session.factionId ? 'faction' : 'general';
+
+        vcActivityOps.push({
+          updateOne: {
+            filter: { id: `session_${session.userId}_${session.sessionStartTime}` },
+            update: {
+              $set: {
+                userId: session.userId,
+                guildId,
+                startTime: new Date(session.sessionStartTime),
+                endTime: today,
+                channelId: session.channelId,
+                channelType,
+                factionId: session.factionId ?? null,
+                date: normalizedDate,
+              },
+              $inc: {
+                duration: incrementalDuration,
+                coinsEarned: coinsEarned
+              },
+              $setOnInsert: {
+                createdAt: today
+              }
+            },
+            upsert: true
+          }
+        });
+
+        // --- Aggregates for Faction/Quest ---
+        if (session.factionId) {
+          // Faction Stats
+          const fUpdate = factionUpdates.get(session.factionId) || { vcTime: 0, xp: 0 };
+          fUpdate.vcTime += incrementalDuration;
+          fUpdate.xp += incrementalDuration;
+          factionUpdates.set(session.factionId, fUpdate);
+
+          // Quest Progress
+          const quest = questMap.get(session.factionId);
+          if (quest && quest.type === 'collective_vc_time') {
+            const qUpdate = questUpdates.get(quest.id) || { progress: 0, contributors: new Map() };
+            qUpdate.progress += incrementalDuration;
+            const contrib = qUpdate.contributors.get(session.userId) || 0;
+            qUpdate.contributors.set(session.userId, contrib + incrementalDuration);
+            questUpdates.set(quest.id, qUpdate);
+          }
+        }
+
+        // --- Redis Update Prep ---
+        redisUpdates.push({
+          userId: session.userId,
+          duration: sessionManager.calculateDuration(session)
+        });
+
+      } catch (error) {
+        logger.error(`Error processing bulk session for user ${session.userId}`, error);
+      }
+    }
+
+    // --- EXECUTE BULK OPS ---
+    const promises: Promise<any>[] = [];
+
+    // Helper to tag promises for logging
+    const trackOp = (promise: Promise<any>, name: string, count: number) =>
+      promise.then(res => ({ status: 'fulfilled', name, count, res }))
+        .catch(err => ({ status: 'rejected', name, count, err }));
+
+    if (userOps.length > 0) promises.push(trackOp(database.users.bulkWrite(userOps), 'users', userOps.length));
+    if (transactionOps.length > 0) promises.push(trackOp(database.transactions.bulkWrite(transactionOps), 'transactions', transactionOps.length));
+    if (vcActivityOps.length > 0) promises.push(trackOp(database.vcActivity.bulkWrite(vcActivityOps), 'vcActivity', vcActivityOps.length));
+
+    // Faction Updates
+    factionUpdates.forEach((hashes, factionId) => {
+      factionOps.push({
+        updateOne: {
+          filter: { id: factionId, guildId },
+          update: {
+            $inc: {
+              totalFactionVcTime: hashes.vcTime,
+              totalVcTime: hashes.vcTime,
+              pendingVcXp: hashes.xp
+            },
+            $set: { updatedAt: today }
+          }
+        }
+      });
+    });
+    if (factionOps.length > 0) promises.push(trackOp(database.factions.bulkWrite(factionOps), 'factions', factionOps.length));
+
+    // Quest Updates
+    questUpdates.forEach((data, questId) => {
+      const updateObj: any = {
+        $inc: { currentProgress: data.progress },
+        $set: { updatedAt: today }
+      };
+      data.contributors.forEach((amount, userId) => {
+        updateObj.$inc = updateObj.$inc || {};
+        updateObj.$inc[`contributorStats.${userId}.contribution`] = amount;
+        updateObj.$set = updateObj.$set || {};
+        updateObj.$set[`contributorStats.${userId}.userId`] = userId;
+      });
+
+      questOps.push({
+        updateOne: {
+          filter: { id: questId, guildId },
+          update: updateObj
+        }
+      });
+    });
+    if (questOps.length > 0) promises.push(trackOp(database.quests.bulkWrite(questOps), 'quests', questOps.length));
+
+    // Redis Updates
+    if (redisUpdates.length > 0) {
+      promises.push(trackOp(sessionManager.updateLastSavedDurationBulk(redisUpdates, guildId), 'redis', redisUpdates.length));
+    }
+
+    const results = await Promise.allSettled(promises);
+
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        const val = result.value as any; // { status, name, count, res/err }
+        if (val.status === 'rejected') {
+          logger.error(`Bulk op failed: ${val.name} (${val.count} ops)`, val.err);
+        } else {
+          logger.debug(`Bulk op success: ${val.name} (${val.count} ops)`);
+        }
+      } else {
+        logger.error('Critical failure in bulk operation wrapper', result.reason);
+      }
+    });
+
+    logger.info(`Bulk save completed for ${sessions.length} sessions`);
   }
 
   /**

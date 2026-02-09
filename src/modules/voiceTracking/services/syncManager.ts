@@ -4,6 +4,7 @@ import { sessionManager } from './sessionManager';
 import { databaseUpdater } from './databaseUpdater';
 import { categoryValidator } from './categoryValidator';
 import logger from '../../../core/logger';
+import { factionStatsTracker } from '../../factions/services/factionStatsTracker';
 
 /**
  * Sync Manager
@@ -21,7 +22,7 @@ export class SyncManager {
       logger.warn('Sync manager already running');
       return;
     }
-
+    // updated the cron job to production interval (5 minutes)
     this.task = cron.schedule('*/5 * * * *', async () => {
       await this.syncAllActiveSessions(client);
     });
@@ -42,7 +43,6 @@ export class SyncManager {
 
   /**
    * Sync all active sessions across all guilds
-   * Optimized for single-guild operation
    */
   async syncAllActiveSessions(client: BotClient): Promise<void> {
     if (this.isRunning) {
@@ -55,66 +55,130 @@ export class SyncManager {
     try {
       logger.info('Starting periodic VC session sync...');
 
+      const guilds = client.guilds.cache;
       let totalSynced = 0;
       let totalCleaned = 0;
 
-      // Get the single guild (optimized for single-guild operation)
-      const guild = client.guilds.cache.first();
-      if (!guild) {
+      if (guilds.size === 0) {
         logger.warn('Sync Manager: Bot is not in any guilds, skipping sync');
         return;
       }
 
-      try {
+      for (const [_, guild] of guilds) {
+        // Check if tracking enabled
         if (!categoryValidator.isTrackingEnabled(guild.id)) {
-          logger.debug('VC tracking is disabled, skipping sync');
-          return;
+          logger.debug(`VC tracking is disabled for guild ${guild.id}, skipping sync`);
+          continue;
         }
 
-        const sessions = await sessionManager.getAllActiveSessions(guild.id);
-
-        for (const session of sessions) {
+        try {
+          // Ensure pending VC XP is processed regardless of active sessions
           try {
-            const member = await guild.members.fetch(session.userId).catch(() => null);
-
-            if (!member || !member.voice.channelId) {
-              logger.warn(`Cleaning stale session for user ${session.userId} (not in VC)`);
-              await databaseUpdater.saveAndEndSession(session.userId, guild.id);
-              totalCleaned++;
-              continue;
-            }
-
-            if (member.voice.channelId !== session.channelId) {
-              logger.warn(
-                `Session channel mismatch for user ${session.userId}: ` +
-                `Session: ${session.channelId}, Actual: ${member.voice.channelId}`
-              );
-              await databaseUpdater.saveAndEndSession(session.userId, guild.id);
-              totalCleaned++;
-              continue;
-            }
-
-            await databaseUpdater.saveSessionIncremental(session, guild.id);
-            totalSynced++;
+            await factionStatsTracker.processPendingVcXpForAllFactions(guild.id);
           } catch (error) {
-            logger.error(`Failed to sync session for user ${session.userId}:`, error);
+            logger.error(`Failed to process pending VC XP for guild ${guild.id}`, error);
           }
-        }
-      } catch (error) {
-        logger.error(`Failed to sync sessions for guild ${guild.id}:`, error);
-      }
 
-      // Process pending VC XP conversions for factions
-      try {
-        const { factionStatsTracker } = await import('../../factions/services/factionStatsTracker');
-        await factionStatsTracker.processPendingVcXpForAllFactions(guild.id);
-      } catch (error) {
-        logger.error('Error processing pending VC XP:', error);
+          const sessions = await sessionManager.getAllActiveSessions(guild.id);
+
+          if (sessions.length === 0) {
+            logger.debug(`No active sessions to sync for guild ${guild.id}`);
+            continue;
+          }
+
+          // Bulk fetch all members to validate their VC state
+          const userIds = sessions.map(s => s.userId);
+          let members;
+          try {
+            members = await guild.members.fetch({ user: userIds });
+          } catch (error) {
+            logger.error(`Failed to bulk fetch members for guild ${guild.id}`, error);
+            continue;
+          }
+
+          const validSessions: typeof sessions = [];
+          const staleSessionUserIds: string[] = [];
+          const sessionsToTransfer: { userId: string; newChannelId: string; factionId?: string }[] = [];
+
+          // Get tracked categories once
+          const trackedCategories = categoryValidator.getTrackedCategoryIds(guild.id);
+
+          for (const session of sessions) {
+            const member = members.get(session.userId);
+
+            // Validation 1: Member must exist and be in a VC
+            if (!member || !member.voice.channelId) {
+              logger.warn(`Cleaning stale session for user ${session.userId} in guild ${guild.id} (not in VC)`);
+              staleSessionUserIds.push(session.userId);
+              continue;
+            }
+
+            // Validation 2: Check for channel mismatch (Hopping)
+            if (member.voice.channelId !== session.channelId) {
+              // Check if the NEW channel is tracked
+              const voiceChannel = member.voice.channel;
+              const isTracked = voiceChannel && voiceChannel.parentId && trackedCategories.includes(voiceChannel.parentId);
+
+              if (isTracked) {
+                logger.info(
+                  `User ${session.userId} moved from ${session.channelId} to ${member.voice.channelId} (Tracked). Transforming session.`
+                );
+
+                // 1. Queue old session for stats saving
+                validSessions.push(session);
+
+                // 2. Queue transfer to update Redis to the new channel
+                sessionsToTransfer.push({
+                  userId: session.userId,
+                  newChannelId: member.voice.channelId
+                });
+              } else {
+                logger.warn(
+                  `User ${session.userId} moved to untracked channel ${member.voice.channelId}. Ending session.`
+                );
+                staleSessionUserIds.push(session.userId);
+              }
+              continue;
+            }
+
+            // No mismatch, valid session
+            validSessions.push(session);
+          }
+
+          // Clean up stale sessions
+          for (const userId of staleSessionUserIds) {
+            await databaseUpdater.saveAndEndSession(userId, guild.id);
+            totalCleaned++;
+          }
+
+          // Bulk save valid sessions
+          if (validSessions.length > 0) {
+            await databaseUpdater.saveSessionsBulk(validSessions, guild.id);
+            totalSynced += validSessions.length;
+          }
+
+          // Handle Transfers
+          for (const transfer of sessionsToTransfer) {
+            const isFaction = await factionStatsTracker.isFactionChannel(transfer.newChannelId, guild.id);
+            const factionId = isFaction ? await factionStatsTracker.getFactionByChannelId(transfer.newChannelId, guild.id) : undefined;
+
+            await sessionManager.transferSession(
+              transfer.userId,
+              guild.id,
+              transfer.newChannelId,
+              factionId || undefined
+            );
+          }
+
+        } catch (error) {
+          logger.error(`Failed to sync sessions for guild ${guild.id}:`, error);
+        }
       }
 
       logger.info(
         `Periodic sync complete: ${totalSynced} sessions synced, ${totalCleaned} stale sessions cleaned`
       );
+
     } catch (error) {
       logger.error('Error during periodic sync:', error);
     } finally {
