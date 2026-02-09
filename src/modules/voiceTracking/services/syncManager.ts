@@ -22,12 +22,12 @@ export class SyncManager {
       logger.warn('Sync manager already running');
       return;
     }
-    // updated the cron job to production interval (5 minutes)
-    this.task = cron.schedule('*/5 * * * *', async () => {
+    // updated the cron job to production interval (15 minutes)
+    this.task = cron.schedule('*/15 * * * *', async () => {
       await this.syncAllActiveSessions(client);
     });
 
-    logger.info('Periodic sync manager started (runs every 5 minutes)');
+    logger.info('Periodic sync manager started (runs every 15 minutes)');
   }
 
   /**
