@@ -97,19 +97,30 @@ export class SessionManager {
   }
 
   /**
+   * Newly Added - Gemini 3 pro. Refactored exsisting retrieval to bulk
    * Get all active sessions for a guild
+   * Optimized to use MGET for bulk retrieval
    */
   async getAllActiveSessions(guildId: string): Promise<VCSession[]> {
     try {
       const pattern = this.getSessionPattern(guildId);
       const keys = await redis.getClient().keys(pattern);
 
+      if (keys.length === 0) {
+        return [];
+      }
+
+      // Use MGET to fetch all sessions in one round-trip
+      const sessionDataList = await redis.getClient().mget(keys);
       const sessions: VCSession[] = [];
 
-      for (const key of keys) {
-        const sessionData = await redis.get(key);
+      for (const sessionData of sessionDataList) {
         if (sessionData) {
-          sessions.push(JSON.parse(sessionData) as VCSession);
+          try {
+            sessions.push(JSON.parse(sessionData) as VCSession);
+          } catch (e) {
+            logger.warn('Failed to parse session data in bulk fetch', e);
+          }
         }
       }
 
@@ -117,6 +128,46 @@ export class SessionManager {
     } catch (error) {
       logger.error(`Failed to get all sessions for guild ${guildId}:`, error);
       return [];
+    }
+  }
+
+  /**
+   * Newly Added - Gemini 3 pro 
+   * Update lastSavedDuration for multiple users atomically
+   * Uses Lua script to ensure thread safety (only updates if key exists)
+   */
+  async updateLastSavedDurationBulk(updates: { userId: string; duration: number }[], guildId: string): Promise<void> {
+    try {
+      if (!redis.isReady() || updates.length === 0) return;
+
+      const pipeline = redis.getClient().pipeline();
+      const config = configManager.getConfig(guildId);
+      const ttl = config.vcTracking.sessionTTL;
+
+      // Lua script to safely update lastSavedDuration without overwriting other fields
+      // Keys: [sessionKey]
+      // Args: [newLastSavedDuration, ttl]
+      const script = `
+        if redis.call("EXISTS", KEYS[1]) == 1 then
+          local session = redis.call("GET", KEYS[1])
+          local data = cjson.decode(session)
+          data.lastSavedDuration = tonumber(ARGV[1])
+          redis.call("SETEX", KEYS[1], ARGV[2], cjson.encode(data))
+          return 1
+        else
+          return 0
+        end
+      `;
+
+      for (const update of updates) {
+        const key = this.getSessionKey(guildId, update.userId);
+        pipeline.eval(script, 1, key, update.duration, ttl);
+      }
+
+      await pipeline.exec();
+      logger.debug(`Bulk updated lastSavedDuration for ${updates.length} users`);
+    } catch (error) {
+      logger.error('Failed to bulk update lastSavedDuration:', error);
     }
   }
 

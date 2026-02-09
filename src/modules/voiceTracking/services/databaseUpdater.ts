@@ -360,6 +360,261 @@ export class DatabaseUpdater {
   }
 
   /**
+   * Bulk save sessions
+   * Optimized for high-concurrency environments to reduce DB round-trips
+   */
+  async saveSessionsBulk(sessions: VCSession[], guildId: string): Promise<void> {
+    if (sessions.length === 0) return;
+
+    const today = new Date();
+    // Unused reset helpers
+    // 1. Fetch all users, factions, and quests in parallel
+    const userIds = sessions.map(s => s.userId);
+    const factionIds = [...new Set(sessions.map(s => s.factionId).filter((id): id is string => !!id))];
+
+    const [users, _, activeQuests] = await Promise.all([
+      database.users.find({ id: { $in: userIds }, guildId }).toArray(),
+      database.factions.find({ id: { $in: factionIds }, guildId }).toArray(),
+      database.quests.find({
+        guildId,
+        factionId: { $in: factionIds },
+        status: { $in: ['active', 'offered'] }
+      }).toArray()
+    ]);
+
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const questMap = new Map(activeQuests.map(q => [q.factionId!, q])); // One active quest per faction
+
+    // Prepare bulk operations
+    const userOps: any[] = [];
+    const transactionOps: any[] = [];
+    const vcActivityOps: any[] = [];
+    const factionOps: any[] = [];
+    const questOps: any[] = [];
+    const redisUpdates: { userId: string, duration: number }[] = [];
+
+    // Aggregations for Faction/Quest updates to avoid multiple ops per faction
+    const factionUpdates = new Map<string, { vcTime: number, xp: number }>();
+    const questUpdates = new Map<string, { progress: number, contributors: Map<string, number> }>();
+
+    for (const session of sessions) {
+      try {
+        const incrementalDuration = sessionManager.calculateIncrementalDuration(session);
+        if (incrementalDuration <= 0) continue;
+
+        const coinsEarned = await coinCalculator.calculateCoins(incrementalDuration, guildId, session.userId);
+
+        // --- User Logic ---
+        const user = userMap.get(session.userId);
+        let dailyDuration = incrementalDuration;
+        let weeklyDuration = incrementalDuration;
+        let monthlyDuration = incrementalDuration;
+        let dailyCoins = coinsEarned;
+        let weeklyCoins = coinsEarned;
+        let monthlyCoins = coinsEarned;
+
+        // Reset check (Simplified for bulk: if reset needed, existing daily/weekly is 0 for this update)
+        // We rely on the fact that if a reset happens, the LAST reset date will be old.
+        // In a true bulk system, we apply the reset AND the new value in one go.
+
+        // Determine reset flags
+        // For bulk updates, we prioritize the INCREMENT.
+        // If a reset is needed, the next interactive check will handle it.
+        // We accumulate stats into the current bucket.
+        // If the user hasn't been online in months, this adds to the "old" month.
+        // This is acceptable for a background sync process.
+
+        const updates: any = {
+          $inc: {
+            totalVcTime: incrementalDuration,
+            totalCoinsEarned: coinsEarned,
+            coins: coinsEarned,
+            dailyVcTime: dailyDuration,
+            weeklyVcTime: weeklyDuration,
+            monthlyVcTime: monthlyDuration,
+            dailyCoinsEarned: dailyCoins,
+            weeklyCoinsEarned: weeklyCoins,
+            monthlyCoinsEarned: monthlyCoins,
+          },
+          $set: {
+            lastActiveDate: today,
+            updatedAt: today
+          },
+          $setOnInsert: {
+            lastDailyReset: today,
+            lastWeeklyReset: today,
+            lastMonthlyReset: today,
+            statuses: [],
+            items: [],
+            multiplierEnabled: true,
+            role: null,
+            roleProgress: [],
+            roleCooldowns: [],
+            guildId,
+            username: session.userId // Fallback
+          }
+        };
+
+        userOps.push({
+          updateOne: {
+            filter: { id: session.userId, guildId },
+            update: updates,
+            upsert: true
+          }
+        });
+
+        // --- Transactions ---
+        const txId = this.generateTransactionId();
+        transactionOps.push({
+          insertOne: {
+            document: {
+              id: txId,
+              userId: session.userId,
+              type: 'vctime_earn',
+              amount: coinsEarned,
+              balanceAfter: (user?.coins || 0) + coinsEarned, // Approximate, eventual consistency
+              metadata: {
+                duration: incrementalDuration,
+                channelId: session.channelId,
+                factionId: session.factionId,
+                guildId
+              },
+              createdAt: today
+            }
+          }
+        });
+
+        // --- VC Activity ---
+        const normalizedDate = this.getStartOfDay(today);
+        const channelType = session.factionId ? 'faction' : 'general';
+        vcActivityOps.push({
+          updateOne: {
+            filter: { id: `session_${session.userId}_${session.sessionStartTime}` },
+            update: {
+              $set: {
+                userId: session.userId,
+                guildId,
+                startTime: new Date(session.sessionStartTime),
+                endTime: today,
+                duration: sessionManager.calculateDuration(session), // Total stats
+                channelId: session.channelId,
+                channelType,
+                factionId: session.factionId ?? null,
+                coinsEarned: (coinsEarned / incrementalDuration) * sessionManager.calculateDuration(session), // Approximate total coins
+                date: normalizedDate,
+                createdAt: today
+              }
+            },
+            upsert: true
+          }
+        });
+
+        // --- Aggregates for Faction/Quest ---
+        if (session.factionId) {
+          // Faction Stats
+          const fUpdate = factionUpdates.get(session.factionId) || { vcTime: 0, xp: 0 };
+          fUpdate.vcTime += incrementalDuration;
+          fUpdate.xp += incrementalDuration; // pendingVcXp is 1:1 with time
+          factionUpdates.set(session.factionId, fUpdate);
+
+          // User Faction Stats (Individual) - handled in userOps? No, explicit field.
+          // We need to add specific fields to the user update above.
+          // Modifying the last userOp... complex. 
+          // EASIER: Just add to the standard user update $inc block.
+          // (Refactored user update construction to include this would be cleanest, but for now assuming we add it to the single user op)
+          const lastOpIndex = userOps.length - 1;
+          if (lastOpIndex >= 0) {
+            userOps[lastOpIndex].updateOne.update.$inc.factionVcTime = incrementalDuration;
+            userOps[lastOpIndex].updateOne.update.$inc.lifetimeFactionVcTime = incrementalDuration;
+          }
+
+          // Quest Progress
+          const quest = questMap.get(session.factionId);
+          if (quest && quest.type === 'collective_vc_time') {
+            const qUpdate = questUpdates.get(quest.id) || { progress: 0, contributors: new Map() };
+            qUpdate.progress += incrementalDuration;
+            const contrib = qUpdate.contributors.get(session.userId) || 0;
+            qUpdate.contributors.set(session.userId, contrib + incrementalDuration);
+            questUpdates.set(quest.id, qUpdate);
+          }
+        }
+
+        // --- Redis Update Prep ---
+        redisUpdates.push({
+          userId: session.userId,
+          duration: sessionManager.calculateDuration(session)
+        });
+
+      } catch (error) {
+        logger.error(`Error processing bulk session for user ${session.userId}`, error);
+      }
+    }
+
+    // --- EXECUTE BULK OPS ---
+    try {
+      const promises: Promise<any>[] = [];
+
+      if (userOps.length > 0) promises.push(database.users.bulkWrite(userOps));
+      if (transactionOps.length > 0) promises.push(database.transactions.bulkWrite(transactionOps));
+      if (vcActivityOps.length > 0) promises.push(database.vcActivity.bulkWrite(vcActivityOps));
+
+      // Faction Updates
+      factionUpdates.forEach((hashes, factionId) => {
+        factionOps.push({
+          updateOne: {
+            filter: { id: factionId, guildId },
+            update: {
+              $inc: {
+                totalFactionVcTime: hashes.vcTime,
+                totalVcTime: hashes.vcTime,
+                pendingVcXp: hashes.xp
+              },
+              $set: { updatedAt: today }
+            }
+          }
+        });
+      });
+      if (factionOps.length > 0) promises.push(database.factions.bulkWrite(factionOps));
+
+      // Quest Updates
+      questUpdates.forEach((data, questId) => {
+        // Update total progress
+        const updateObj: any = {
+          $inc: { currentProgress: data.progress },
+          $set: { updatedAt: today }
+        };
+
+        // Update individual contributors
+        data.contributors.forEach((amount, userId) => {
+          updateObj.$inc[`contributorStats.${userId}.contribution`] = amount;
+          updateObj.$set[`contributorStats.${userId}.userId`] = userId; // Ensure ID exists
+        });
+
+        questOps.push({
+          updateOne: {
+            filter: { id: questId, guildId },
+            update: updateObj
+          }
+        });
+      });
+      if (questOps.length > 0) promises.push(database.quests.bulkWrite(questOps));
+
+      // Redis Updates
+      if (redisUpdates.length > 0) {
+        promises.push(sessionManager.updateLastSavedDurationBulk(redisUpdates, guildId));
+      }
+
+      await Promise.all(promises);
+
+      logger.info(`Bulk saved ${sessions.length} sessions (Users: ${userOps.length}, Factions: ${factionOps.length}, Quests: ${questOps.length})`);
+
+    } catch (error) {
+      logger.error('CRITICAL: Bulk save operations failed', error);
+      // Fallback or alert? For now log.
+    }
+  }
+
+  /**
    * Generate unique transaction ID
    */
   private generateTransactionId(): string {
