@@ -323,8 +323,8 @@ export class QuestRewardService {
       updatedUserMap.set(u.id, u);
     }
 
-    // 5) Prepare transaction documents
-    const transactions: any[] = [];
+    // 5) Prepare transaction operations (idempotent upserts with deterministic IDs)
+    const transactionOps: any[] = [];
 
     for (const reward of userRewards) {
       const updatedUser = updatedUserMap.get(reward.userId);
@@ -333,19 +333,32 @@ export class QuestRewardService {
         continue;
       }
 
-      transactions.push({
-        id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
-        userId: reward.userId,
-        type: 'quest_reward',
-        amount: reward.finalAmount,
-        balanceAfter: updatedUser.coins,
-        metadata: {
-          questId,
-          source: 'quest_completion',
-          baseAmount: reward.baseAmount,
-          multiplierApplied: reward.finalAmount !== reward.baseAmount,
+      // Generate deterministic transaction ID to prevent duplicates on retry
+      const transactionId = `txn_quest_${questId}_${reward.userId}`;
+
+      transactionOps.push({
+        updateOne: {
+          filter: { id: transactionId },
+          update: {
+            $set: {
+              userId: reward.userId,
+              type: 'quest_reward',
+              amount: reward.finalAmount,
+              balanceAfter: updatedUser.coins,
+              metadata: {
+                questId,
+                source: 'quest_completion',
+                baseAmount: reward.baseAmount,
+                multiplierApplied: reward.finalAmount !== reward.baseAmount,
+              },
+              createdAt: now,
+            },
+            $setOnInsert: {
+              id: transactionId,
+            },
+          },
+          upsert: true,
         },
-        createdAt: now,
       });
 
       logger.info(
@@ -353,8 +366,8 @@ export class QuestRewardService {
       );
     }
 
-    if (transactions.length > 0) {
-      await database.transactions.insertMany(transactions);
+    if (transactionOps.length > 0) {
+      await database.transactions.bulkWrite(transactionOps);
     }
   }
 
