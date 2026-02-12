@@ -2,6 +2,17 @@ import { redis, RedisKeys } from '../../../cache/client';
 import logger from '../../../core/logger';
 import { StatusEntry, ItemEntry } from '../../../types/database';
 
+type MultiplierCacheEntry = {
+  value: number;
+  expiresAt: number;
+};
+
+// In-process L1 caches for hot multiplier reads.
+// These sit in front of Redis (L2) and MongoDB (source of truth).
+const totalMultiplierL1 = new Map<string, MultiplierCacheEntry>();
+
+const MULTIPLIER_L1_TTL_MS = 5_000; // 5 seconds
+
 /**
  * Multiplier Cache Service
  * Handles Redis caching for multiplier values with graceful fallback
@@ -66,6 +77,14 @@ export class MultiplierCacheService {
    */
   async getTotalMultiplierFromCache(userId: string, guildId: string): Promise<number | null> {
     try {
+      const l1Key = `${guildId}:${userId}`;
+      const now = Date.now();
+
+      const l1Entry = totalMultiplierL1.get(l1Key);
+      if (l1Entry && l1Entry.expiresAt > now) {
+        return l1Entry.value;
+      }
+
       if (!redis.isReady()) {
         logger.debug(`Redis not ready, skipping cache read for total multiplier ${userId}`);
         return null;
@@ -77,6 +96,11 @@ export class MultiplierCacheService {
       if (cached) {
         const multiplier = parseFloat(cached);
         if (!isNaN(multiplier)) {
+          // Populate L1 cache on successful Redis hit
+          totalMultiplierL1.set(l1Key, {
+            value: multiplier,
+            expiresAt: now + MULTIPLIER_L1_TTL_MS,
+          });
           return multiplier;
         }
       }
@@ -131,6 +155,15 @@ export class MultiplierCacheService {
    */
   async setTotalMultiplierCache(userId: string, guildId: string, multiplier: number): Promise<void> {
     try {
+      const l1Key = `${guildId}:${userId}`;
+      const now = Date.now();
+
+      // Always populate L1 (even if Redis is not ready)
+      totalMultiplierL1.set(l1Key, {
+        value: multiplier,
+        expiresAt: now + MULTIPLIER_L1_TTL_MS,
+      });
+
       if (!redis.isReady()) {
         logger.debug(`Redis not ready, skipping cache write for total multiplier ${userId}`);
         return;
@@ -185,6 +218,9 @@ export class MultiplierCacheService {
    */
   async invalidateTotalMultiplierCache(userId: string, guildId: string): Promise<void> {
     try {
+      const l1Key = `${guildId}:${userId}`;
+      totalMultiplierL1.delete(l1Key);
+
       if (!redis.isReady()) {
         return;
       }

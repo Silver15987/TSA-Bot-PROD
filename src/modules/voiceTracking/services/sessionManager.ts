@@ -41,6 +41,10 @@ export class SessionManager {
 
       await redis.setex(key, ttl, JSON.stringify(session));
 
+      // Track active sessions per guild to avoid KEYS scans
+      const setKey = this.getSessionSetKey(guildId);
+      await redis.getClient().sadd(setKey, userId);
+
       logger.info(`Session created for user ${userId} in channel ${channelId} (guild: ${guildId}, faction: ${factionId || 'none'})`);
     } catch (error) {
       logger.error(`Failed to create session for user ${userId}:`, error);
@@ -81,6 +85,9 @@ export class SessionManager {
       const key = this.getSessionKey(guildId, userId);
       await redis.del(key);
 
+      const setKey = this.getSessionSetKey(guildId);
+      await redis.getClient().srem(setKey, userId);
+
       logger.info(`Session deleted for user ${userId} (guild: ${guildId})`);
     } catch (error) {
       logger.error(`Failed to delete session for user ${userId}:`, error);
@@ -103,26 +110,35 @@ export class SessionManager {
    */
   async getAllActiveSessions(guildId: string): Promise<VCSession[]> {
     try {
-      const pattern = this.getSessionPattern(guildId);
-      const keys = await redis.getClient().keys(pattern);
+      const setKey = this.getSessionSetKey(guildId);
+      const userIds = await redis.getClient().smembers(setKey);
 
-      if (keys.length === 0) {
+      if (!userIds || userIds.length === 0) {
         return [];
       }
+
+      const keys = userIds.map(userId => this.getSessionKey(guildId, userId));
 
       // Use MGET to fetch all sessions in one round-trip
       const sessionDataList = await redis.getClient().mget(keys);
       const sessions: VCSession[] = [];
 
-      for (const sessionData of sessionDataList) {
-        if (sessionData) {
-          try {
-            sessions.push(JSON.parse(sessionData) as VCSession);
-          } catch (e) {
-            logger.warn('Failed to parse session data in bulk fetch', e);
-          }
+      userIds.forEach((userId, index) => {
+        const sessionData = sessionDataList[index];
+        if (!sessionData) {
+          // Session key missing but userId still in set; clean up membership lazily
+          redis.getClient().srem(setKey, userId).catch(err =>
+            logger.warn(`Failed to clean up stale session set entry for user ${userId} in guild ${guildId}`, err)
+          );
+          return;
         }
-      }
+
+        try {
+          sessions.push(JSON.parse(sessionData) as VCSession);
+        } catch (e) {
+          logger.warn('Failed to parse session data in bulk fetch', e);
+        }
+      });
 
       return sessions;
     } catch (error) {
@@ -364,10 +380,10 @@ export class SessionManager {
   }
 
   /**
-   * Get pattern for all sessions in a guild
+   * Get set key that tracks all active sessions in a guild
    */
-  private getSessionPattern(guildId: string): string {
-    return `vc_session:${guildId}:*`;
+  private getSessionSetKey(guildId: string): string {
+    return `vc_sessions:${guildId}`;
   }
 }
 

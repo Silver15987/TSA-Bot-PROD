@@ -10,6 +10,8 @@
     "refresh-commands": "tsx scripts/refresh-commands.ts",
     "set-faction-category": "tsx scripts/set-faction-category.ts",
     "fetch-user-factions": "tsx scripts/fetch-user-factions.ts",
+    "export-message-reactors": "tsx scripts/export-message-reactors.ts",
+    "top-tasks-leaderboard": "tsx scripts/top-tasks-leaderboard.ts",
     "migrate:vc-activity": "tsx scripts/migrate-add-vc-activity.ts",
     "migrate:faction-xp": "tsx scripts/migrate-faction-xp.ts",
     "migrate:status-multipliers": "tsx scripts/migrate-add-status-multipliers.ts",

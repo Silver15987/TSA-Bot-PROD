@@ -1,4 +1,6 @@
 import Redis from 'ioredis';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../core/config';
 import logger from '../core/logger';
 
@@ -116,6 +118,7 @@ class RedisClient {
    * Helper: Get value
    */
   async get(key: string): Promise<string | null> {
+    recordRedisCall('get');
     return this.getClient().get(key);
   }
 
@@ -123,6 +126,7 @@ class RedisClient {
    * Helper: Set value
    */
   async set(key: string, value: string): Promise<void> {
+    recordRedisCall('set');
     await this.getClient().set(key, value);
   }
 
@@ -130,6 +134,7 @@ class RedisClient {
    * Helper: Set value with expiration (seconds)
    */
   async setex(key: string, seconds: number, value: string): Promise<void> {
+    recordRedisCall('setex');
     await this.getClient().setex(key, seconds, value);
   }
 
@@ -137,6 +142,7 @@ class RedisClient {
    * Helper: Delete key
    */
   async del(key: string): Promise<void> {
+    recordRedisCall('del');
     await this.getClient().del(key);
   }
 
@@ -144,6 +150,7 @@ class RedisClient {
    * Helper: Check if key exists
    */
   async exists(key: string): Promise<boolean> {
+    recordRedisCall('exists');
     const result = await this.getClient().exists(key);
     return result === 1;
   }
@@ -152,6 +159,7 @@ class RedisClient {
    * Helper: Set expiration
    */
   async expire(key: string, seconds: number): Promise<void> {
+    recordRedisCall('expire');
     await this.getClient().expire(key, seconds);
   }
 
@@ -159,6 +167,7 @@ class RedisClient {
    * Helper: Increment value
    */
   async incr(key: string): Promise<number> {
+    recordRedisCall('incr');
     return this.getClient().incr(key);
   }
 
@@ -166,6 +175,7 @@ class RedisClient {
    * Helper: Decrement value
    */
   async decr(key: string): Promise<number> {
+    recordRedisCall('decr');
     return this.getClient().decr(key);
   }
 
@@ -241,6 +251,58 @@ export const RedisKeys = {
   tournamentVc: (tournamentId: string, round: number, userId: string) =>
     `tournament:vc:${tournamentId}:${round}:${userId}`,
 };
+
+// Lightweight Redis call metrics (shares DB_CALL_METRICS_ENABLED flag with Mongo metrics)
+const DB_CALL_METRICS_ENABLED = process.env.DB_CALL_METRICS_ENABLED === 'true';
+
+type RedisCallMetrics = Record<string, number>;
+const redisCallMetrics: RedisCallMetrics = {};
+
+function recordRedisCall(operation: string): void {
+  if (!DB_CALL_METRICS_ENABLED) return;
+  const key = operation;
+  redisCallMetrics[key] = (redisCallMetrics[key] ?? 0) + 1;
+}
+
+function flushRedisCallMetrics(): void {
+  if (!DB_CALL_METRICS_ENABLED) return;
+
+  const keys = Object.keys(redisCallMetrics);
+  if (keys.length === 0) return;
+
+  const snapshot = {
+    ts: new Date().toISOString(),
+    type: 'redis',
+    metrics: { ...redisCallMetrics },
+  };
+
+  for (const key of keys) {
+    delete redisCallMetrics[key];
+  }
+
+  const dir = path.join(process.cwd(), 'db-calls');
+
+  fs.mkdir(dir, { recursive: true }, (mkdirErr) => {
+    if (mkdirErr) {
+      logger.warn('Failed to create db-calls directory for Redis metrics:', mkdirErr);
+      return;
+    }
+
+    const filePath = path.join(dir, `${new Date().toISOString().slice(0, 10)}.log`);
+    const line = JSON.stringify(snapshot) + '\n';
+
+    fs.appendFile(filePath, line, (appendErr) => {
+      if (appendErr) {
+        logger.warn('Failed to write Redis call metrics:', appendErr);
+      }
+    });
+  });
+}
+
+if (DB_CALL_METRICS_ENABLED) {
+  const intervalMs = Number(process.env.DB_CALL_METRICS_INTERVAL_MS || '60000');
+  setInterval(flushRedisCallMetrics, intervalMs).unref();
+}
 
 // Export singleton instance
 export const redis = new RedisClient();

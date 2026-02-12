@@ -179,7 +179,10 @@ export class FactionXpService {
    */
   async processPendingVcXp(factionId: string, guildId: string): Promise<void> {
     try {
-      const faction = await database.factions.findOne({ id: factionId, guildId });
+      const faction = await database.factions.findOne(
+        { id: factionId, guildId },
+        { projection: { pendingVcXp: 1, xp: 1, level: 1 } }
+      );
       if (!faction) {
         logger.error(`Faction ${factionId} not found when processing pending VC XP`);
         return;
@@ -196,8 +199,8 @@ export class FactionXpService {
       const hoursUsed = Math.floor(pendingVcXp / 3600000);
       const remainingMs = pendingVcXp % 3600000; // Keep remainder for next batch
 
-      // Atomically add XP and reset pending VC XP
-      await database.factions.updateOne(
+      // Atomically add XP and reset pending VC XP, returning the updated document
+      const updatedFaction = await database.factions.findOneAndUpdate(
         { id: factionId, guildId },
         {
           $inc: {
@@ -205,35 +208,41 @@ export class FactionXpService {
             pendingVcXp: -pendingVcXp + remainingMs, // Reset to remainder
           },
           $set: { updatedAt: new Date() },
+        },
+        {
+          returnDocument: 'after',
+          projection: { xp: 1, level: 1 },
         }
       );
+
+      if (!updatedFaction) {
+        logger.error(`Faction ${factionId} not found after VC XP update`);
+        return;
+      }
 
       logger.debug(
         `Converted ${hoursUsed} hours of VC time to ${xpToAdd} XP for faction ${factionId} (remaining: ${remainingMs}ms)`
       );
 
-      // Check for level up
-      const updatedFaction = await database.factions.findOne({ id: factionId, guildId });
-      if (updatedFaction) {
-        const oldLevel = faction.level || 1;
-        const newXp = updatedFaction.xp || 0;
-        const newLevel = this.calculateLevel(newXp);
+      // Check for level up based on the updated document
+      const oldLevel = faction.level || 1;
+      const newXp = updatedFaction.xp || 0;
+      const newLevel = this.calculateLevel(newXp);
 
-        if (newLevel > oldLevel) {
-          await database.factions.updateOne(
-            { id: factionId, guildId },
-            {
-              $set: {
-                level: newLevel,
-                updatedAt: new Date(),
-              },
-            }
-          );
+      if (newLevel > oldLevel) {
+        await database.factions.updateOne(
+          { id: factionId, guildId },
+          {
+            $set: {
+              level: newLevel,
+              updatedAt: new Date(),
+            },
+          }
+        );
 
-          logger.info(
-            `Faction ${factionId} leveled up from VC XP! Level ${oldLevel} → ${newLevel}`
-          );
-        }
+        logger.info(
+          `Faction ${factionId} leveled up from VC XP! Level ${oldLevel} → ${newLevel}`
+        );
       }
     } catch (error) {
       logger.error(`Error processing pending VC XP for faction ${factionId}:`, error);

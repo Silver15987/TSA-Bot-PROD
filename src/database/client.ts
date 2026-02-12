@@ -1,4 +1,6 @@
 import { MongoClient, Db, Collection, Document } from 'mongodb';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../core/config';
 import logger from '../core/logger';
 import {
@@ -90,7 +92,49 @@ class DatabaseClient {
    * Get collection with type safety
    */
   getCollection<T extends Document>(name: string): Collection<T> {
-    return this.getDb().collection<T>(name);
+    const baseCollection = this.getDb().collection<T>(name);
+
+    if (!DB_CALL_METRICS_ENABLED) {
+      return baseCollection;
+    }
+
+    const handler: ProxyHandler<Collection<T>> = {
+      get(target, prop, receiver) {
+        const value = (target as any)[prop];
+
+        if (typeof value !== 'function') {
+          return Reflect.get(target, prop, receiver);
+        }
+
+        const opName = String(prop);
+        const instrumentedOps = new Set([
+          'find',
+          'findOne',
+          'insertOne',
+          'insertMany',
+          'updateOne',
+          'updateMany',
+          'replaceOne',
+          'deleteOne',
+          'deleteMany',
+          'bulkWrite',
+          'countDocuments',
+          'aggregate',
+          'distinct',
+        ]);
+
+        if (!instrumentedOps.has(opName)) {
+          return value.bind(target);
+        }
+
+        return (...args: any[]) => {
+          recordDbCall(opName, name);
+          return (value as Function).apply(target, args);
+        };
+      },
+    };
+
+    return new Proxy(baseCollection, handler);
   }
 
   /**
@@ -250,6 +294,58 @@ class DatabaseClient {
   isReady(): boolean {
     return this.isConnected;
   }
+}
+
+// Lightweight MongoDB call metrics (disabled by default; enable with DB_CALL_METRICS_ENABLED=true)
+const DB_CALL_METRICS_ENABLED = process.env.DB_CALL_METRICS_ENABLED === 'true';
+
+type DbCallMetrics = Record<string, number>;
+const dbCallMetrics: DbCallMetrics = {};
+
+function recordDbCall(operation: string, collection: string): void {
+  if (!DB_CALL_METRICS_ENABLED) return;
+  const key = `${collection}:${operation}`;
+  dbCallMetrics[key] = (dbCallMetrics[key] ?? 0) + 1;
+}
+
+function flushDbCallMetrics(): void {
+  if (!DB_CALL_METRICS_ENABLED) return;
+
+  const keys = Object.keys(dbCallMetrics);
+  if (keys.length === 0) return;
+
+  const snapshot = {
+    ts: new Date().toISOString(),
+    type: 'mongo',
+    metrics: { ...dbCallMetrics },
+  };
+
+  for (const key of keys) {
+    delete dbCallMetrics[key];
+  }
+
+  const dir = path.join(process.cwd(), 'db-calls');
+
+  fs.mkdir(dir, { recursive: true }, (mkdirErr) => {
+    if (mkdirErr) {
+      logger.warn('Failed to create db-calls directory for Mongo metrics:', mkdirErr);
+      return;
+    }
+
+    const filePath = path.join(dir, `${new Date().toISOString().slice(0, 10)}.log`);
+    const line = JSON.stringify(snapshot) + '\n';
+
+    fs.appendFile(filePath, line, (appendErr) => {
+      if (appendErr) {
+        logger.warn('Failed to write Mongo DB call metrics:', appendErr);
+      }
+    });
+  });
+}
+
+if (DB_CALL_METRICS_ENABLED) {
+  const intervalMs = Number(process.env.DB_CALL_METRICS_INTERVAL_MS || '60000');
+  setInterval(flushDbCallMetrics, intervalMs).unref();
 }
 
 // Export singleton instance
