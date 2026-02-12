@@ -3,6 +3,17 @@ import { memberHistoryManager } from './memberHistoryManager';
 import { factionXpService } from './factionXpService';
 import logger from '../../../core/logger';
 
+type FactionChannelCacheEntry = {
+  factionId: string | null;
+  expiresAt: number;
+};
+
+// Lightweight in-process cache for faction lookups by (guildId, channelId)
+// This reduces repeated MongoDB reads on hot paths like voiceStateUpdate and messageCreate.
+const factionByChannelCache = new Map<string, FactionChannelCacheEntry>();
+
+const FACTION_CHANNEL_CACHE_TTL_MS = 60_000; // 60 seconds
+
 /**
  * Faction Stats Tracker
  * Handles tracking of faction-specific statistics (VC time, messages)
@@ -63,17 +74,21 @@ export class FactionStatsTracker {
    */
   async processPendingVcXpForAllFactions(guildId: string): Promise<void> {
     try {
-      // Get all active factions
-      const factions = await database.factions.find({ guildId, disbanded: { $ne: true } }).toArray();
+      // Get all active factions that actually have pending VC XP to process
+      const factions = await database.factions
+        .find({
+          guildId,
+          disbanded: { $ne: true },
+          pendingVcXp: { $gte: 3600000 }, // At least 1 hour accumulated
+        })
+        .toArray();
 
       for (const faction of factions) {
-        if (faction.pendingVcXp && faction.pendingVcXp >= 3600000) {
-          // At least 1 hour accumulated, convert to XP
-          await factionXpService.processPendingVcXp(faction.id, guildId);
-        }
+        // At least 1 hour accumulated, convert to XP
+        await factionXpService.processPendingVcXp(faction.id, guildId);
       }
 
-      logger.debug(`Processed pending VC XP for ${factions.length} factions`);
+      logger.debug(`Processed pending VC XP for ${factions.length} factions with accumulated time`);
     } catch (error) {
       logger.error('Error processing pending VC XP for all factions:', error);
     }
@@ -116,8 +131,23 @@ export class FactionStatsTracker {
    */
   async getFactionByChannelId(channelId: string, guildId: string): Promise<string | null> {
     try {
+      const cacheKey = `${guildId}:${channelId}`;
+      const now = Date.now();
+
+      const cached = factionByChannelCache.get(cacheKey);
+      if (cached && cached.expiresAt > now) {
+        return cached.factionId;
+      }
+
       const faction = await database.factions.findOne({ channelId, guildId, disbanded: false });
-      return faction?.id || null;
+      const factionId = faction?.id ?? null;
+
+      factionByChannelCache.set(cacheKey, {
+        factionId,
+        expiresAt: now + FACTION_CHANNEL_CACHE_TTL_MS,
+      });
+
+      return factionId;
     } catch (error) {
       logger.error('Error getting faction by channel ID:', error);
       return null;
@@ -129,12 +159,21 @@ export class FactionStatsTracker {
    */
   async isFactionChannel(channelId: string, guildId: string): Promise<boolean> {
     try {
-      const faction = await database.factions.findOne({ channelId, guildId, disbanded: false });
-      return faction !== null;
+      const factionId = await this.getFactionByChannelId(channelId, guildId);
+      return factionId !== null;
     } catch (error) {
       logger.error('Error checking if channel is faction channel:', error);
       return false;
     }
+  }
+
+  /**
+   * Invalidate cached faction entry for a specific channel.
+   * This is a best-effort helper used when channel bindings change.
+   */
+  invalidateFactionChannelCache(guildId: string, channelId: string): void {
+    const cacheKey = `${guildId}:${channelId}`;
+    factionByChannelCache.delete(cacheKey);
   }
 
   /**

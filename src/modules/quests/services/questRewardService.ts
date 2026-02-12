@@ -124,10 +124,8 @@ export class QuestRewardService {
         );
       }
 
-      // Distribute individual rewards
-      for (const calc of rewardCalculations) {
-        await this.distributeIndividualReward(calc.userId, guildId, calc.reward, quest.id);
-      }
+      // Distribute individual rewards (batched users + transactions)
+      await this.distributeIndividualRewardsBulk(rewardCalculations, guildId, quest.id);
 
       // Update role condition progress for quest completion (all contributors)
       try {
@@ -168,119 +166,208 @@ export class QuestRewardService {
   }
 
   /**
-   * Distribute individual reward to a user
+   * Distribute individual rewards in a batched way:
+   * - Per-user multiplier calculation (unchanged behavior)
+   * - Single bulkWrite for user updates (existing + new users)
+   * - Single insertMany for transactions
    */
-  private async distributeIndividualReward(
-    userId: string,
+  private async distributeIndividualRewardsBulk(
+    rewardCalculations: QuestRewardCalculation[],
     guildId: string,
-    amount: number,
     questId: string
   ): Promise<void> {
+    if (rewardCalculations.length === 0) {
+      return;
+    }
+
+    const now = new Date();
+
+    // 1) Calculate per-user final amounts (respecting multipliers and existing behavior)
+    const userRewards: {
+      userId: string;
+      baseAmount: number;
+      finalAmount: number;
+    }[] = [];
+
     try {
-      // Apply multiplier to individual rewards
-      let finalAmount = amount;
-      try {
-        const { multiplierCalculator } = await import('../../status/services/multiplierCalculator');
-        const multiplier = await multiplierCalculator.calculateTotalMultiplier(userId, guildId);
-        finalAmount = Math.floor(amount * multiplier);
-      } catch (error) {
-        logger.warn(`Failed to apply multiplier to quest reward for user ${userId}, using base amount:`, error);
-        // Continue with base amount if multiplier fails
-      }
+      const { multiplierCalculator } = await import('../../status/services/multiplierCalculator');
 
-      // Get or create user document
-      let user = await database.users.findOne({ id: userId, guildId });
+      for (const calc of rewardCalculations) {
+        const userId = calc.userId;
+        const baseAmount = calc.reward;
+        let finalAmount = baseAmount;
 
-      if (!user) {
-        logger.warn(`User ${userId} not found, creating user document`);
-        // Create minimal user document
-        const newUser = {
-          id: userId,
-          guildId,
-          username: 'Unknown',
-          discriminator: '0',
-          totalVcTime: 0,
-          dailyVcTime: 0,
-          weeklyVcTime: 0,
-          monthlyVcTime: 0,
-          coins: finalAmount,
-          totalCoinsEarned: finalAmount,
-          dailyCoinsEarned: finalAmount,
-          weeklyCoinsEarned: finalAmount,
-          monthlyCoinsEarned: finalAmount,
-          lastActiveDate: new Date(),
-          currentStreak: 0,
-          longestStreak: 0,
-          currentFaction: null,
-          factionJoinDate: null,
-          factionCoinsDeposited: 0,
-          factionVcTime: 0,
-          lifetimeFactionVcTime: 0,
-          questsCompleted: 1,
-          statuses: [],
-          items: [],
-          multiplierEnabled: true,
-          role: null,
-          roleProgress: [],
-          roleCooldowns: [],
-          lastDailyReset: new Date(),
-          lastWeeklyReset: new Date(),
-          lastMonthlyReset: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        await database.users.insertOne(newUser);
-
-        // Fetch the inserted user to get the full document with _id
-        user = await database.users.findOne({ id: userId, guildId });
-        if (!user) {
-          throw new Error(`Failed to create user ${userId}`);
+        try {
+          const multiplier = await multiplierCalculator.calculateTotalMultiplier(userId, guildId);
+          finalAmount = Math.floor(baseAmount * multiplier);
+        } catch (error) {
+          logger.warn(
+            `Failed to apply multiplier to quest reward for user ${userId}, using base amount:`,
+            error
+          );
         }
-      } else {
-        // Update existing user
-        await database.users.updateOne(
-          { id: userId, guildId },
-          {
-            $inc: {
-              coins: finalAmount,
-              totalCoinsEarned: finalAmount,
-              dailyCoinsEarned: finalAmount,
-              weeklyCoinsEarned: finalAmount,
-              monthlyCoinsEarned: finalAmount,
-              questsCompleted: 1,
+
+        userRewards.push({ userId, baseAmount, finalAmount });
+      }
+    } catch (error) {
+      logger.error(
+        'Failed to load or use multiplierCalculator for quest rewards, falling back to base amounts:',
+        error
+      );
+      // If multiplier logic fails entirely, fall back to base amounts for all users
+      userRewards.length = 0;
+      for (const calc of rewardCalculations) {
+        userRewards.push({
+          userId: calc.userId,
+          baseAmount: calc.reward,
+          finalAmount: calc.reward,
+        });
+      }
+    }
+
+    // 2) Fetch existing users in a single query
+    const userIds = Array.from(new Set(userRewards.map(r => r.userId)));
+    const existingUsers = await database.users
+      .find({ guildId, id: { $in: userIds } })
+      .toArray();
+    const existingUserIds = new Set(existingUsers.map(u => u.id));
+
+    // 3) Prepare bulk operations for users
+    const userOps: any[] = [];
+
+    for (const reward of userRewards) {
+      const { userId, finalAmount } = reward;
+      const filter = { id: userId, guildId };
+
+      if (existingUserIds.has(userId)) {
+        // Existing user: mirror previous $inc + $set behavior
+        userOps.push({
+          updateOne: {
+            filter,
+            update: {
+              $inc: {
+                coins: finalAmount,
+                totalCoinsEarned: finalAmount,
+                dailyCoinsEarned: finalAmount,
+                weeklyCoinsEarned: finalAmount,
+                monthlyCoinsEarned: finalAmount,
+                questsCompleted: 1,
+              },
+              $set: {
+                updatedAt: now,
+              },
             },
-            $set: { updatedAt: new Date() },
-          }
-        );
+          },
+        });
+      } else {
+        // New user: use upsert with both $setOnInsert (for initialization) and $inc (for reward)
+        // This ensures that if another process creates the user before bulkWrite, the reward is still applied
+        userOps.push({
+          updateOne: {
+            filter,
+            update: {
+              $setOnInsert: {
+                id: userId,
+                guildId,
+                username: 'Unknown',
+                discriminator: '0',
+                totalVcTime: 0,
+                dailyVcTime: 0,
+                weeklyVcTime: 0,
+                monthlyVcTime: 0,
+                lastActiveDate: now,
+                currentStreak: 0,
+                longestStreak: 0,
+                currentFaction: null,
+                factionJoinDate: null,
+                factionCoinsDeposited: 0,
+                factionVcTime: 0,
+                lifetimeFactionVcTime: 0,
+                statuses: [],
+                items: [],
+                multiplierEnabled: true,
+                role: null,
+                roleProgress: [],
+                roleCooldowns: [],
+                lastDailyReset: now,
+                lastWeeklyReset: now,
+                lastMonthlyReset: now,
+                createdAt: now,
+                updatedAt: now,
+              },
+              $inc: {
+                coins: finalAmount,
+                totalCoinsEarned: finalAmount,
+                dailyCoinsEarned: finalAmount,
+                weeklyCoinsEarned: finalAmount,
+                monthlyCoinsEarned: finalAmount,
+                questsCompleted: 1,
+              },
+            },
+            upsert: true,
+          },
+        });
       }
+    }
 
-      // Create transaction record
-      // Refetch user to get accurate balance after update
-      const updatedUser = await database.users.findOne({ id: userId, guildId });
+    if (userOps.length > 0) {
+      await database.users.bulkWrite(userOps);
+    }
+
+    // 4) Fetch updated users in one query to obtain balances
+    const updatedUsers = await database.users
+      .find({ guildId, id: { $in: userIds } })
+      .toArray();
+    const updatedUserMap = new Map<string, any>();
+    for (const u of updatedUsers) {
+      updatedUserMap.set(u.id, u);
+    }
+
+    // 5) Prepare transaction operations (idempotent upserts with deterministic IDs)
+    const transactionOps: any[] = [];
+
+    for (const reward of userRewards) {
+      const updatedUser = updatedUserMap.get(reward.userId);
       if (!updatedUser) {
-        throw new Error(`User ${userId} not found after update`);
+        logger.error(`User ${reward.userId} not found after quest reward update`);
+        continue;
       }
 
-      await database.transactions.insertOne({
-        id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
-        userId,
-        type: 'quest_reward',
-        amount: finalAmount,
-        balanceAfter: updatedUser.coins,
-        metadata: {
-          questId,
-          source: 'quest_completion',
-          baseAmount: amount,
-          multiplierApplied: finalAmount !== amount,
+      // Generate deterministic transaction ID to prevent duplicates on retry
+      const transactionId = `txn_quest_${questId}_${reward.userId}`;
+
+      transactionOps.push({
+        updateOne: {
+          filter: { id: transactionId },
+          update: {
+            $set: {
+              userId: reward.userId,
+              type: 'quest_reward',
+              amount: reward.finalAmount,
+              balanceAfter: updatedUser.coins,
+              metadata: {
+                questId,
+                source: 'quest_completion',
+                baseAmount: reward.baseAmount,
+                multiplierApplied: reward.finalAmount !== reward.baseAmount,
+              },
+              createdAt: now,
+            },
+            $setOnInsert: {
+              id: transactionId,
+            },
+          },
+          upsert: true,
         },
-        createdAt: new Date(),
       });
 
-      logger.info(`Distributed ${finalAmount} coins (base: ${amount}) to user ${userId} from quest ${questId}`);
-    } catch (error) {
-      logger.error(`Error distributing individual reward to user ${userId}:`, error);
-      throw error; // Propagate error to caller
+      logger.info(
+        `Distributed ${reward.finalAmount} coins (base: ${reward.baseAmount}) to user ${reward.userId} from quest ${questId}`
+      );
+    }
+
+    if (transactionOps.length > 0) {
+      await database.transactions.bulkWrite(transactionOps);
     }
   }
 

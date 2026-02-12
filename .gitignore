@@ -46,3 +46,10 @@ temp/
 *.md
 
 .claude/
+
+gitSecret.txt
+gitSSH
+gitSSH.pub
+scripts/export-message-reactors.ts
+message-reactors-*.csv
+scripts/top-tasks-leaderboard.ts

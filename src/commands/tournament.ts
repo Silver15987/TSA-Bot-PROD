@@ -564,15 +564,16 @@ async function handleView(
   const standings = state?.standings ?? active.standings;
 
   // Resolve faction names for nicer output
-  // Query factions individually to include disbanded ones that may be in standings
+  // Use a single batched query for all factions involved in standings
   const factionNameMap = new Map<string, string>();
   if (standings && standings.length > 0) {
-    const uniqueFactionIds = [...new Set(standings.map(s => s.factionId))];
-    for (const factionId of uniqueFactionIds) {
-      const faction = await database.factions.findOne({ id: factionId, guildId });
-      if (faction) {
-        factionNameMap.set(factionId, faction.name);
-      }
+    const uniqueFactionIds = [...new Set(standings.map((s) => s.factionId))];
+    const factions = await database.factions
+      .find({ guildId, id: { $in: uniqueFactionIds } })
+      .toArray();
+
+    for (const faction of factions) {
+      factionNameMap.set(faction.id, faction.name);
     }
   }
 

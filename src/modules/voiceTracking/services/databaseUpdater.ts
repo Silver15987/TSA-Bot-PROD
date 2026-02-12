@@ -172,38 +172,43 @@ export class DatabaseUpdater {
     let monthlyCoins = coinsEarned;
 
     if (resetOccurred) {
-      // Get user's current reset timestamps to determine boundary
-      const user = await database.users.findOne({ id: userId, guildId });
+      // Determine reset boundary using the same logic as DailyResetManager:
+      // start of the current day in UTC (this matches lastDailyReset after a reset).
+      const boundaryDate = new Date(today);
+      boundaryDate.setUTCHours(0, 0, 0, 0);
+      const resetBoundary = boundaryDate.getTime();
 
-      if (user && user.lastDailyReset) {
-        const sessionStart = session.sessionStartTime;
-        const sessionEnd = today.getTime();
+      // For incremental saves, use the incremental window start (not full session start)
+      // The incremental window is from lastSavedDuration offset to now
+      const incrementalStart = session.sessionStartTime + (session.lastSavedDuration || 0);
+      const sessionEnd = today.getTime();
 
-        // Calculate time in new period (after reset)
-        const resetBoundary = new Date(user.lastDailyReset).getTime();
+      // Calculate overlap between incremental window and post-reset period
+      const timeInNewPeriod = Math.max(0, sessionEnd - Math.max(resetBoundary, incrementalStart));
+      const timeInIncrementalWindow = sessionEnd - incrementalStart;
 
-        if (sessionStart < resetBoundary && sessionEnd > resetBoundary) {
-          // Session spans the reset boundary
-          const timeInNewPeriod = sessionEnd - resetBoundary;
-          const timeInOldPeriod = resetBoundary - sessionStart;
+      if (timeInIncrementalWindow > 0 && timeInNewPeriod > 0) {
+        // Calculate proportion of incremental window that falls in new period
+        // Clamp to [0, 1] to prevent proportion > 1 (defensive)
+        const proportionInNewPeriod = Math.min(Math.max(timeInNewPeriod / timeInIncrementalWindow, 0), 1);
 
-          // Only count time from new period for daily/weekly/monthly
-          dailyDuration = timeInNewPeriod;
-          weeklyDuration = timeInNewPeriod;
-          monthlyDuration = timeInNewPeriod;
+        // Only count time from new period for daily/weekly/monthly
+        dailyDuration = Math.round(duration * proportionInNewPeriod);
+        weeklyDuration = Math.round(duration * proportionInNewPeriod);
+        monthlyDuration = Math.round(duration * proportionInNewPeriod);
 
-          // Split coins proportionally
-          const proportionInNewPeriod = timeInNewPeriod / duration;
-          dailyCoins = Math.round(coinsEarned * proportionInNewPeriod);
-          weeklyCoins = Math.round(coinsEarned * proportionInNewPeriod);
-          monthlyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+        // Split coins proportionally
+        dailyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+        weeklyCoins = Math.round(coinsEarned * proportionInNewPeriod);
+        monthlyCoins = Math.round(coinsEarned * proportionInNewPeriod);
 
-          logger.info(
-            `Session for user ${userId} spans reset boundary: ` +
-            `${Math.floor(timeInOldPeriod / 1000)}s in old period, ` +
-            `${Math.floor(timeInNewPeriod / 1000)}s in new period`
-          );
-        }
+        const timeInOldPeriod = duration - (duration * proportionInNewPeriod);
+        logger.info(
+          `Session for user ${userId} spans reset boundary (incremental): ` +
+          `${Math.floor(timeInOldPeriod / 1000)}s in old period, ` +
+          `${Math.floor(duration * proportionInNewPeriod / 1000)}s in new period ` +
+          `(proportion: ${(proportionInNewPeriod * 100).toFixed(1)}%)`
+        );
       }
     }
 
@@ -213,9 +218,10 @@ export class DatabaseUpdater {
     // While we can't use true ACID transactions in Cosmos DB (MongoDB API),
     // we can ensure consistency through careful ordering and error handling
 
-    let userUpdateResult;
+    let transactionId: string | null = null;
+
     try {
-      userUpdateResult = await database.users.updateOne(
+      const updatedUser = await database.users.findOneAndUpdate(
         { id: userId, guildId },
         {
           $inc: {
@@ -245,30 +251,21 @@ export class DatabaseUpdater {
             roleCooldowns: [],
           },
         },
-        { upsert: true }
+        {
+          upsert: true,
+          returnDocument: 'after',
+        }
       );
-    } catch (error) {
-      logger.error(`CRITICAL: Failed to update user ${userId} balance:`, error);
-      throw error; // Re-throw to prevent transaction creation
-    }
 
-    // Verify the update succeeded
-    if (!userUpdateResult.acknowledged) {
-      throw new Error(`User update not acknowledged for ${userId}`);
-    }
+      if (!updatedUser) {
+        // This should not happen with upsert:true, but handle defensively
+        logger.error(`CRITICAL: User ${userId} not found after upsert/update`);
+        throw new Error(`User ${userId} not found after update`);
+      }
 
-    // Get updated balance for transaction record
-    const userAfterUpdate = await database.users.findOne({ id: userId, guildId });
-    if (!userAfterUpdate) {
-      // This should never happen if update succeeded, but handle it
-      logger.error(`CRITICAL: User ${userId} not found after successful update`);
-      throw new Error(`User ${userId} not found after update`);
-    }
-    const balanceAfter = userAfterUpdate.coins;
-
-    // Create transaction record (use updateOne with upsert for idempotency)
-    const transactionId = this.generateTransactionId();
-    try {
+      const balanceAfter = updatedUser.coins ?? 0;
+      // Create transaction record (use updateOne with upsert for idempotency)
+      transactionId = this.generateTransactionId();
       await database.transactions.updateOne(
         { id: transactionId },
         {
@@ -289,15 +286,15 @@ export class DatabaseUpdater {
         { upsert: true }
       );
     } catch (error) {
-      // Transaction record failed to create
-      // Balance was already updated - log this as a ledger inconsistency
+      // Either the user update or the transaction write failed.
+      // If the user update succeeded but the transaction failed, log a ledger inconsistency.
       logger.error(
-        `LEDGER INCONSISTENCY: User ${userId} balance updated (+${coinsEarned}) ` +
-        `but transaction ${transactionId} failed to create:`,
+        transactionId
+          ? `LEDGER INCONSISTENCY: User ${userId} balance updated (+${coinsEarned}) but transaction ${transactionId} failed to create:`
+          : `CRITICAL: Failed to update user ${userId} balance and/or create transaction:`,
         error
       );
-      // Don't throw - balance update succeeded, user got coins
-      // Transaction record is supplementary
+      // Don't throw - best effort; user balance update may have succeeded and we avoid crashing callers.
     }
 
     // ========================================
