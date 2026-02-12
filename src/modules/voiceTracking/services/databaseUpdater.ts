@@ -178,29 +178,36 @@ export class DatabaseUpdater {
       boundaryDate.setUTCHours(0, 0, 0, 0);
       const resetBoundary = boundaryDate.getTime();
 
-      const sessionStart = session.sessionStartTime;
+      // For incremental saves, use the incremental window start (not full session start)
+      // The incremental window is from lastSavedDuration offset to now
+      const incrementalStart = session.sessionStartTime + (session.lastSavedDuration || 0);
       const sessionEnd = today.getTime();
 
-      if (sessionStart < resetBoundary && sessionEnd > resetBoundary) {
-        // Session spans the reset boundary
-        const timeInNewPeriod = sessionEnd - resetBoundary;
-        const timeInOldPeriod = resetBoundary - sessionStart;
+      // Calculate overlap between incremental window and post-reset period
+      const timeInNewPeriod = Math.max(0, sessionEnd - Math.max(resetBoundary, incrementalStart));
+      const timeInIncrementalWindow = sessionEnd - incrementalStart;
+
+      if (timeInIncrementalWindow > 0 && timeInNewPeriod > 0) {
+        // Calculate proportion of incremental window that falls in new period
+        // Clamp to [0, 1] to prevent proportion > 1 (defensive)
+        const proportionInNewPeriod = Math.min(Math.max(timeInNewPeriod / timeInIncrementalWindow, 0), 1);
 
         // Only count time from new period for daily/weekly/monthly
-        dailyDuration = timeInNewPeriod;
-        weeklyDuration = timeInNewPeriod;
-        monthlyDuration = timeInNewPeriod;
+        dailyDuration = Math.round(duration * proportionInNewPeriod);
+        weeklyDuration = Math.round(duration * proportionInNewPeriod);
+        monthlyDuration = Math.round(duration * proportionInNewPeriod);
 
         // Split coins proportionally
-        const proportionInNewPeriod = timeInNewPeriod / duration;
         dailyCoins = Math.round(coinsEarned * proportionInNewPeriod);
         weeklyCoins = Math.round(coinsEarned * proportionInNewPeriod);
         monthlyCoins = Math.round(coinsEarned * proportionInNewPeriod);
 
+        const timeInOldPeriod = duration - (duration * proportionInNewPeriod);
         logger.info(
-          `Session for user ${userId} spans reset boundary: ` +
+          `Session for user ${userId} spans reset boundary (incremental): ` +
           `${Math.floor(timeInOldPeriod / 1000)}s in old period, ` +
-          `${Math.floor(timeInNewPeriod / 1000)}s in new period`
+          `${Math.floor(duration * proportionInNewPeriod / 1000)}s in new period ` +
+          `(proportion: ${(proportionInNewPeriod * 100).toFixed(1)}%)`
         );
       }
     }

@@ -260,7 +260,8 @@ export class QuestRewardService {
           },
         });
       } else {
-        // New user: mirror previous insertOne shape via upsert
+        // New user: use upsert with both $setOnInsert (for initialization) and $inc (for reward)
+        // This ensures that if another process creates the user before bulkWrite, the reward is still applied
         userOps.push({
           updateOne: {
             filter,
@@ -274,11 +275,6 @@ export class QuestRewardService {
                 dailyVcTime: 0,
                 weeklyVcTime: 0,
                 monthlyVcTime: 0,
-                coins: finalAmount,
-                totalCoinsEarned: finalAmount,
-                dailyCoinsEarned: finalAmount,
-                weeklyCoinsEarned: finalAmount,
-                monthlyCoinsEarned: finalAmount,
                 lastActiveDate: now,
                 currentStreak: 0,
                 longestStreak: 0,
@@ -287,7 +283,6 @@ export class QuestRewardService {
                 factionCoinsDeposited: 0,
                 factionVcTime: 0,
                 lifetimeFactionVcTime: 0,
-                questsCompleted: 1,
                 statuses: [],
                 items: [],
                 multiplierEnabled: true,
@@ -299,6 +294,14 @@ export class QuestRewardService {
                 lastMonthlyReset: now,
                 createdAt: now,
                 updatedAt: now,
+              },
+              $inc: {
+                coins: finalAmount,
+                totalCoinsEarned: finalAmount,
+                dailyCoinsEarned: finalAmount,
+                weeklyCoinsEarned: finalAmount,
+                monthlyCoinsEarned: finalAmount,
+                questsCompleted: 1,
               },
             },
             upsert: true,

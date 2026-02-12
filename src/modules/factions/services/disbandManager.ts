@@ -68,6 +68,15 @@ export class DisbandManager {
         }
       );
 
+      // Invalidate faction-channel cache after disbanding faction
+      try {
+        const { factionStatsTracker } = await import('./factionStatsTracker');
+        factionStatsTracker.invalidateFactionChannelCache(guildId, faction.channelId);
+      } catch (error) {
+        logger.warn(`Failed to invalidate faction channel cache for ${factionId}:`, error);
+        // Don't fail disband if cache invalidation fails
+      }
+
       // 7. Send public faction disbanded announcement
       await factionAnnouncementService.sendFactionDisbandedAnnouncement(
         guild.client,

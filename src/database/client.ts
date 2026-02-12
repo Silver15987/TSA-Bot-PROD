@@ -107,23 +107,8 @@ class DatabaseClient {
         }
 
         const opName = String(prop);
-        const instrumentedOps = new Set([
-          'find',
-          'findOne',
-          'insertOne',
-          'insertMany',
-          'updateOne',
-          'updateMany',
-          'replaceOne',
-          'deleteOne',
-          'deleteMany',
-          'bulkWrite',
-          'countDocuments',
-          'aggregate',
-          'distinct',
-        ]);
 
-        if (!instrumentedOps.has(opName)) {
+        if (!INSTRUMENTED_OPS.has(opName)) {
           return value.bind(target);
         }
 
@@ -298,6 +283,23 @@ class DatabaseClient {
 
 // Lightweight MongoDB call metrics (disabled by default; enable with DB_CALL_METRICS_ENABLED=true)
 const DB_CALL_METRICS_ENABLED = process.env.DB_CALL_METRICS_ENABLED === 'true';
+
+// Set of instrumented operations (hoisted to module scope to avoid reallocation)
+const INSTRUMENTED_OPS = new Set([
+  'find',
+  'findOne',
+  'insertOne',
+  'insertMany',
+  'updateOne',
+  'updateMany',
+  'replaceOne',
+  'deleteOne',
+  'deleteMany',
+  'bulkWrite',
+  'countDocuments',
+  'aggregate',
+  'distinct',
+]);
 
 type DbCallMetrics = Record<string, number>;
 const dbCallMetrics: DbCallMetrics = {};

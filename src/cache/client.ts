@@ -111,7 +111,67 @@ class RedisClient {
     if (!this.client) {
       throw new Error('Redis not connected. Call connect() first.');
     }
-    return this.client;
+
+    if (!DB_CALL_METRICS_ENABLED) {
+      return this.client;
+    }
+
+    // Return a proxied client that intercepts command invocations for metrics
+    return new Proxy(this.client, {
+      get(target, prop, receiver) {
+        const value = (target as any)[prop];
+
+        if (typeof value !== 'function') {
+          return Reflect.get(target, prop, receiver);
+        }
+
+        const operation = String(prop);
+
+        // Intercept Redis commands (common ones)
+        if (
+          operation === 'sadd' ||
+          operation === 'smembers' ||
+          operation === 'mget' ||
+          operation === 'srem' ||
+          operation === 'get' ||
+          operation === 'set' ||
+          operation === 'setex' ||
+          operation === 'del' ||
+          operation === 'exists' ||
+          operation === 'expire' ||
+          operation === 'incr' ||
+          operation === 'decr' ||
+          operation === 'pipeline' ||
+          operation === 'multi'
+        ) {
+          return (...args: any[]) => {
+            recordRedisCall(operation);
+            const result = (value as Function).apply(target, args);
+
+            // Wrap pipeline/multi results to instrument individual commands
+            if ((operation === 'pipeline' || operation === 'multi') && result && typeof result === 'object') {
+              return new Proxy(result, {
+                get(pipeTarget, pipeProp, pipeReceiver) {
+                  const pipeValue = (pipeTarget as any)[pipeProp];
+                  if (typeof pipeValue === 'function') {
+                    return (...pipeArgs: any[]) => {
+                      const pipeOp = String(pipeProp);
+                      recordRedisCall(`${operation}:${pipeOp}`);
+                      return (pipeValue as Function).apply(pipeTarget, pipeArgs);
+                    };
+                  }
+                  return Reflect.get(pipeTarget, pipeProp, pipeReceiver);
+                },
+              });
+            }
+
+            return result;
+          };
+        }
+
+        return value.bind(target);
+      },
+    }) as Redis;
   }
 
   /**

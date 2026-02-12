@@ -51,5 +51,5 @@ gitSecret.txt
 gitSSH
 gitSSH.pub
 scripts/export-message-reactors.ts
-message-reactors-1467490539795648585-1770311596226.csv
+message-reactors-*.csv
 scripts/top-tasks-leaderboard.ts

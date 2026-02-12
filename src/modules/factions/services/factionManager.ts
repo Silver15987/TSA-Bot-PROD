@@ -66,6 +66,15 @@ export class FactionManager {
 
       await database.factions.insertOne(factionDoc);
 
+      // Invalidate faction-channel cache after creating faction
+      try {
+        const { factionStatsTracker } = await import('./factionStatsTracker');
+        factionStatsTracker.invalidateFactionChannelCache(guildId, channelId);
+      } catch (error) {
+        logger.warn(`Failed to invalidate faction channel cache for ${factionId}:`, error);
+        // Don't fail faction creation if cache invalidation fails
+      }
+
       // Cache faction multiplier in Redis
       try {
         const { multiplierCacheService } = await import('../../status/services/multiplierCacheService');
