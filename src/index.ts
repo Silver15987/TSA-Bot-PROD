@@ -198,6 +198,9 @@ async function main() {
 
       // Conditionally register quest commands based on config
       const questsEnabled = config.quests?.enabled !== false;
+      logger.info(
+        `Quest system config check: quests.enabled = ${config.quests?.enabled} (${typeof config.quests?.enabled}), questsEnabled = ${questsEnabled}`
+      );
       const questCommands = (client as any).questCommands || [];
       
       if (questsEnabled && questCommands.length > 0) {
