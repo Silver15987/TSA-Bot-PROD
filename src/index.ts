@@ -85,7 +85,7 @@ async function main() {
     // Quest command file names to skip when quests are disabled
     const questCommandFiles = ['quest.ts', 'quest.js', 'questAdmin.ts', 'questAdmin.js'];
 
-    const commands = [];
+    const commands: any[] = [];
     const questCommands: any[] = []; // Store quest commands for conditional registration
     
     for (const file of commandFiles) {
