@@ -231,7 +231,6 @@ async function main() {
       startUpkeepTask(client);
 
       // Start quest scheduler task (only if quests enabled)
-      const questsEnabled = config.quests?.enabled !== false;
       if (questsEnabled) {
         startQuestScheduler(client);
         logger.info('Quest scheduler enabled and started');

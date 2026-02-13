@@ -25,7 +25,17 @@ async function toggleQuests(guildId: string, enabled: boolean): Promise<void> {
     // Connect to database
     await database.connect();
 
-    // Update the configuration in the database
+    // Check if server config exists first to avoid creating malformed documents
+    const existingConfig = await database.serverConfigs.findOne({ guildId });
+
+    if (!existingConfig) {
+      logger.error(
+        `❌ No existing server config found for guild ${guildId}. Aborting quest toggle to avoid creating malformed config.`
+      );
+      return;
+    }
+
+    // Update the existing configuration in the database (no upsert)
     const result = await database.serverConfigs.updateOne(
       { guildId },
       {
@@ -35,11 +45,14 @@ async function toggleQuests(guildId: string, enabled: boolean): Promise<void> {
           updatedBy: 'script',
         },
         $inc: { version: 1 },
-      },
-      { upsert: true }
+      }
     );
 
-    if (result.acknowledged) {
+    if (result.matchedCount === 0) {
+      logger.error(
+        `❌ Failed to update quest system status: server config for guild ${guildId} was not matched during update.`
+      );
+    } else if (result.acknowledged) {
       logger.info(`✅ Successfully ${status.toLowerCase()} quest system for guild ${guildId}`);
       
       // Reload the configuration
