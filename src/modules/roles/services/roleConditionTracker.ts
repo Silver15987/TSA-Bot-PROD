@@ -3,6 +3,7 @@ import { RoleType, RoleProgressEntry } from '../../../types/database';
 import logger from '../../../core/logger';
 import { roleUnlockConditionManager } from './roleUnlockConditionManager';
 import { roleManager } from './roleManager';
+import { roleSystemGuard } from '../utils/roleSystemGuard';
 
 export interface ProgressUpdateResult {
   success: boolean;
@@ -24,6 +25,11 @@ export class RoleConditionTracker {
     conditionType: 'faction_deposit' | 'coins_spent' | 'quest',
     amount: number | string // Amount for deposit/spent, questId for quest
   ): Promise<ProgressUpdateResult> {
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabledSync(guildId)) {
+      return { success: true }; // Silent success to not break calling code
+    }
+
     try {
       const user = await database.users.findOne({ id: userId, guildId });
       if (!user) {

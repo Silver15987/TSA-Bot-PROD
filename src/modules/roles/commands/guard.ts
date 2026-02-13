@@ -9,6 +9,7 @@ import { roleManager } from '../services/roleManager';
 import { roleAbilityService } from '../services/roleAbilityService';
 import { roleStatusManager } from '../services/roleStatusManager';
 import { getRoleEmoji } from '../utils/formatters';
+import { roleSystemGuard } from '../utils/roleSystemGuard';
 
 export default {
   data: new SlashCommandBuilder()
@@ -44,6 +45,14 @@ export default {
       const userId = interaction.user.id;
       const guildId = interaction.guildId!;
       const subcommand = interaction.options.getSubcommand();
+
+      // Check if role system is enabled
+      if (!(await roleSystemGuard.isEnabled(guildId))) {
+        await interaction.editReply({
+          content: roleSystemGuard.getDisabledMessage(),
+        });
+        return;
+      }
 
       // Verify user has Guard role
       const role = await roleManager.getUserRole(userId, guildId);

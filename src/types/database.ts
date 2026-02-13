@@ -547,6 +547,11 @@ export interface ServerConfigDocument {
     roundStartTimeLocal: string;
   };
 
+  // Role System Configuration
+  roles?: {
+    enabled?: boolean; // Master switch for role system (default: true)
+  };
+
   // Metadata
   updatedAt: Date;
   updatedBy: string;

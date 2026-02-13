@@ -2,6 +2,7 @@ import logger from '../../../core/logger';
 import { configManager } from '../../../core/configManager';
 import { database } from '../../../database/client';
 import { roleStatusManager } from '../services/roleStatusManager';
+import { roleSystemGuard } from '../utils/roleSystemGuard';
 
 let statusExpirationInterval: NodeJS.Timeout | null = null;
 
@@ -44,6 +45,20 @@ export function stopRoleStatusExpirationTask(): void {
  */
 async function checkExpiredStatuses(): Promise<void> {
   try {
+    // Check if role system is enabled - we need to check per guild
+    // For now, we'll check if the config manager has a loaded config and use that guild
+    if (configManager.hasConfig()) {
+      const config = configManager.getConfig();
+      const guildId = config.guildId;
+      
+      if (!roleSystemGuard.isEnabledSync(guildId)) {
+        logger.debug(`Role status expiration: Skipping because role system is disabled for guild ${guildId}`);
+        return;
+      }
+    } else {
+      logger.debug('Role status expiration: No config loaded, skipping role system check');
+    }
+
     // If tournaments are configured to pause roles during active tournament, skip
     if (configManager.hasConfig()) {
       const config = configManager.getConfig();

@@ -2,6 +2,7 @@ import { SlashCommandBuilder, ChatInputCommandInteraction, PermissionFlagsBits }
 import { database } from '../database/client';
 import { configManager } from '../core/configManager';
 import logger from '../core/logger';
+import { roleSystemGuard } from '../modules/roles/utils/roleSystemGuard';
 
 export default {
   data: new SlashCommandBuilder()
@@ -24,6 +25,14 @@ export default {
   async execute(interaction: ChatInputCommandInteraction) {
     try {
       await interaction.deferReply({ ephemeral: true });
+
+      // Check if role system is enabled
+      if (!(await roleSystemGuard.isEnabled(interaction.guildId!))) {
+        await interaction.editReply({
+          content: roleSystemGuard.getDisabledMessage(),
+        });
+        return;
+      }
 
       const messageId = interaction.options.getString('messageid', true);
       const role = interaction.options.getRole('role', true);

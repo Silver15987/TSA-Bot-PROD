@@ -113,6 +113,14 @@ class ConfigManager {
   async reloadConfig(guildId: string): Promise<void> {
     logger.info(`Reloading config for guild ${guildId}`);
     await this.loadConfig(guildId);
+    
+    // Clear roleSystemGuard cache when config reloads
+    try {
+      const { roleSystemGuard } = await import('../modules/roles/utils/roleSystemGuard');
+      roleSystemGuard.clearCache(guildId);
+    } catch (error) {
+      logger.debug('Could not clear roleSystemGuard cache:', error);
+    }
   }
 
   /**
@@ -227,6 +235,10 @@ class ConfigManager {
         defaultPlayersPerMatch: 3,
         timeZone: 'Asia/Kolkata',
         roundStartTimeLocal: '00:00',
+      },
+
+      roles: {
+        enabled: true,
       },
 
       updatedAt: new Date(),
