@@ -512,7 +512,7 @@ export interface ServerConfigDocument {
 
   // Quest Configuration
   quests: {
-    enabled: boolean;
+    enabled?: boolean; // Master switch for quest system (default: true)
     acceptanceWindowHours: number; // Default 3
     cooldownHours: number; // Default 3
     autoAssignEnabled: boolean; // Auto-assign quests to factions

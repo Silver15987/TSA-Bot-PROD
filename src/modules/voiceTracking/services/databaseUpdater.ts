@@ -50,12 +50,15 @@ export class DatabaseUpdater {
           duration
         );
 
-        // Update quest progress for VC time quests
-        try {
-          const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
-          await questProgressTracker.trackVcTimeContribution(userId, guildId, session.factionId, duration);
-        } catch (error) {
-          logger.error('Error tracking quest VC time contribution:', error);
+        // Update quest progress for VC time quests (only if quests enabled)
+        const questsEnabled = await this.areQuestsEnabled(guildId);
+        if (questsEnabled) {
+          try {
+            const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
+            await questProgressTracker.trackVcTimeContribution(userId, guildId, session.factionId, duration);
+          } catch (error) {
+            logger.error('Error tracking quest VC time contribution:', error);
+          }
         }
       }
 
@@ -100,12 +103,15 @@ export class DatabaseUpdater {
           incrementalDuration
         );
 
-        // Update quest progress for VC time quests
-        try {
-          const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
-          await questProgressTracker.trackVcTimeContribution(session.userId, guildId, session.factionId, incrementalDuration);
-        } catch (error) {
-          logger.error('Error tracking quest VC time contribution:', error);
+        // Update quest progress for VC time quests (only if quests enabled)
+        const questsEnabled = await this.areQuestsEnabled(guildId);
+        if (questsEnabled) {
+          try {
+            const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
+            await questProgressTracker.trackVcTimeContribution(session.userId, guildId, session.factionId, incrementalDuration);
+          } catch (error) {
+            logger.error('Error tracking quest VC time contribution:', error);
+          }
         }
       }
 
@@ -371,14 +377,19 @@ export class DatabaseUpdater {
     const userIds = sessions.map(s => s.userId);
     const factionIds = [...new Set(sessions.map(s => s.factionId).filter((id): id is string => !!id))];
 
+    // Check if quests are enabled before querying quests
+    const questsEnabled = await this.areQuestsEnabled(guildId);
+    
     const [users, _, activeQuests] = await Promise.all([
       database.users.find({ id: { $in: userIds }, guildId }).toArray(),
       database.factions.find({ id: { $in: factionIds }, guildId }).toArray(),
-      database.quests.find({
-        guildId,
-        factionId: { $in: factionIds },
-        status: { $in: ['active', 'offered'] }
-      }).toArray()
+      questsEnabled
+        ? database.quests.find({
+            guildId,
+            factionId: { $in: factionIds },
+            status: { $in: ['active', 'offered'] }
+          }).toArray()
+        : Promise.resolve([])
     ]);
 
     const userMap = new Map(users.map(u => [u.id, u]));
@@ -549,14 +560,16 @@ export class DatabaseUpdater {
           fUpdate.xp += incrementalDuration;
           factionUpdates.set(session.factionId, fUpdate);
 
-          // Quest Progress
-          const quest = questMap.get(session.factionId);
-          if (quest && quest.type === 'collective_vc_time') {
-            const qUpdate = questUpdates.get(quest.id) || { progress: 0, contributors: new Map() };
-            qUpdate.progress += incrementalDuration;
-            const contrib = qUpdate.contributors.get(session.userId) || 0;
-            qUpdate.contributors.set(session.userId, contrib + incrementalDuration);
-            questUpdates.set(quest.id, qUpdate);
+          // Quest Progress (only if quests enabled)
+          if (questsEnabled) {
+            const quest = questMap.get(session.factionId);
+            if (quest && quest.type === 'collective_vc_time') {
+              const qUpdate = questUpdates.get(quest.id) || { progress: 0, contributors: new Map() };
+              qUpdate.progress += incrementalDuration;
+              const contrib = qUpdate.contributors.get(session.userId) || 0;
+              qUpdate.contributors.set(session.userId, contrib + incrementalDuration);
+              questUpdates.set(quest.id, qUpdate);
+            }
           }
         }
 
@@ -644,6 +657,20 @@ export class DatabaseUpdater {
     });
 
     logger.info(`Bulk save completed for ${sessions.length} sessions`);
+  }
+
+  /**
+   * Check if quest system is enabled (cached check)
+   */
+  private async areQuestsEnabled(guildId: string): Promise<boolean> {
+    try {
+      const { configManager } = await import('../../../core/configManager');
+      const config = configManager.getConfig(guildId);
+      return config.quests?.enabled !== false;
+    } catch (error) {
+      // If config fails, assume disabled for safety (fail-closed)
+      return false;
+    }
   }
 
   /**

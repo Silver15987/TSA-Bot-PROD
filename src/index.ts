@@ -82,7 +82,12 @@ async function main() {
       (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
     );
 
+    // Quest command file names to skip when quests are disabled
+    const questCommandFiles = ['quest.ts', 'quest.js', 'questAdmin.ts', 'questAdmin.js'];
+
     const commands = [];
+    const questCommands: any[] = []; // Store quest commands for conditional registration
+    
     for (const file of commandFiles) {
       const filePath = join(commandsPath, file);
       try {
@@ -90,6 +95,14 @@ async function main() {
         const command = require(filePath).default;
 
         if ('data' in command && 'execute' in command) {
+          // Skip quest commands - they'll be conditionally registered after config loads
+          const isQuestCommand = questCommandFiles.includes(file);
+          if (isQuestCommand) {
+            logger.info(`Quest command ${command.data.name} will be conditionally loaded after config check`);
+            questCommands.push({ commandData: command.data.toJSON(), commandModule: command });
+            continue;
+          }
+
           client.commands.set(command.data.name, command);
           commands.push(command.data.toJSON());
           logger.info(`Loaded command: ${command.data.name}`);
@@ -101,6 +114,9 @@ async function main() {
         throw error; // Re-throw to see the full error
       }
     }
+
+    // Store quest commands on client for later conditional registration
+    (client as any).questCommands = questCommands;
 
     // Load module commands (role-specific commands)
     logger.info('Loading module commands...');
@@ -178,6 +194,27 @@ async function main() {
         return;
       }
 
+      const config = configManager.getConfig(guild.id);
+
+      // Conditionally register quest commands based on config
+      const questsEnabled = config.quests?.enabled !== false;
+      const questCommands = (client as any).questCommands || [];
+      
+      if (questsEnabled && questCommands.length > 0) {
+        logger.info('Quest system enabled - registering quest commands');
+        // Add quest commands to client.commands for runtime execution
+        const questCommandData: any[] = [];
+        for (const { commandData, commandModule } of questCommands) {
+          client.commands.set(commandData.name, commandModule);
+          questCommandData.push(commandData);
+        }
+        const allCommands = [...commands, ...questCommandData];
+        await client.registerCommands(allCommands);
+        logger.info(`Registered ${questCommandData.length} quest commands`);
+      } else if (!questsEnabled) {
+        logger.info('Quest system DISABLED - quest commands not registered');
+      }
+
       // Start webhook server for config hot-reload
       webhookServer.start();
 
@@ -193,8 +230,14 @@ async function main() {
       // Start faction upkeep task
       startUpkeepTask(client);
 
-      // Start quest scheduler task
-      startQuestScheduler(client);
+      // Start quest scheduler task (only if quests enabled)
+      const questsEnabled = config.quests?.enabled !== false;
+      if (questsEnabled) {
+        startQuestScheduler(client);
+        logger.info('Quest scheduler enabled and started');
+      } else {
+        logger.info('Quest system is DISABLED - scheduler not started');
+      }
 
       // Start role status expiration task
       startRoleStatusExpirationTask();
