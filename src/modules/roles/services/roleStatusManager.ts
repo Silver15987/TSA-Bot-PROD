@@ -31,7 +31,7 @@ export class RoleStatusManager {
    */
   async applyStatus(data: StatusData): Promise<string | null> {
     // Early exit if role system disabled
-    if (!roleSystemGuard.isEnabledSync(data.guildId)) {
+    if (!roleSystemGuard.isEnabled()) {
       return null;
     }
 
@@ -167,11 +167,10 @@ export class RoleStatusManager {
    * Check and remove expired statuses
    */
   async checkExpiredStatuses(): Promise<number> {
-    // Early exit if role system disabled - this method doesn't have guildId, 
-    // so we'll handle the check in the task that calls this
-    // if (!roleSystemGuard.isEnabledSync()) {
-    //   return 0;
-    // }
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabled()) {
+      return 0;
+    }
 
     try {
       const now = new Date();

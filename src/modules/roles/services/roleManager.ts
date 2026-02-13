@@ -37,7 +37,7 @@ export class RoleManager {
     roleType: RoleType
   ): Promise<RoleAssignmentResult> {
     // Early exit if role system disabled
-    if (!roleSystemGuard.isEnabledSync(guildId)) {
+    if (!roleSystemGuard.isEnabled()) {
       return {
         success: false,
         error: 'Role system is disabled',
@@ -94,7 +94,7 @@ export class RoleManager {
    */
   async relinquishRole(userId: string, guildId: string): Promise<RoleAssignmentResult> {
     // Early exit if role system disabled
-    if (!roleSystemGuard.isEnabledSync(guildId)) {
+    if (!roleSystemGuard.isEnabled()) {
       return {
         success: false,
         error: 'Role system is disabled',

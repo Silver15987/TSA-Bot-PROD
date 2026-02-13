@@ -56,16 +56,16 @@ export default {
     try {
       await interaction.deferReply({ ephemeral: true });
 
-      const userId = interaction.user.id;
-      const guildId = interaction.guildId!;
-
       // Check if role system is enabled
-      if (!(await roleSystemGuard.isEnabled(guildId))) {
+      if (!roleSystemGuard.isEnabled()) {
         await interaction.editReply({
           content: roleSystemGuard.getDisabledMessage(),
         });
         return;
       }
+
+      const userId = interaction.user.id;
+      const guildId = interaction.guildId!;
 
       // Verify user has Witch role
       const role = await roleManager.getUserRole(userId, guildId);

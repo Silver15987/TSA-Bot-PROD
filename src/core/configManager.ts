@@ -117,7 +117,7 @@ class ConfigManager {
     // Clear roleSystemGuard cache when config reloads
     try {
       const { roleSystemGuard } = await import('../modules/roles/utils/roleSystemGuard');
-      roleSystemGuard.clearCache(guildId);
+      roleSystemGuard.clearCache();
     } catch (error) {
       logger.debug('Could not clear roleSystemGuard cache:', error);
     }

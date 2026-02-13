@@ -27,7 +27,7 @@ export default {
       await interaction.deferReply({ ephemeral: true });
 
       // Check if role system is enabled
-      if (!(await roleSystemGuard.isEnabled(interaction.guildId!))) {
+      if (!roleSystemGuard.isEnabled()) {
         await interaction.editReply({
           content: roleSystemGuard.getDisabledMessage(),
         });

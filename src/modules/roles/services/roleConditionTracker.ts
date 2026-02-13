@@ -26,7 +26,7 @@ export class RoleConditionTracker {
     amount: number | string // Amount for deposit/spent, questId for quest
   ): Promise<ProgressUpdateResult> {
     // Early exit if role system disabled
-    if (!roleSystemGuard.isEnabledSync(guildId)) {
+    if (!roleSystemGuard.isEnabled()) {
       return { success: true }; // Silent success to not break calling code
     }
 
