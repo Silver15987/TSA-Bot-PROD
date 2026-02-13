@@ -11,6 +11,7 @@ import { roleUnlockConditionManager } from '../modules/roles/services/roleUnlock
 import { formatRoleName, formatRoleDescription, formatRoleProgress, getRoleEmoji } from '../modules/roles/utils/formatters';
 import { getAllRoleTypes } from '../modules/roles/types/roleDefinitions';
 import { RoleType } from '../types/database';
+import { roleSystemGuard } from '../modules/roles/utils/roleSystemGuard';
 
 export default {
   data: new SlashCommandBuilder()
@@ -73,6 +74,14 @@ export default {
   async execute(interaction: ChatInputCommandInteraction) {
     try {
       await interaction.deferReply({ ephemeral: true });
+
+      // Check if role system is enabled
+      if (!roleSystemGuard.isEnabled()) {
+        await interaction.editReply({
+          content: roleSystemGuard.getDisabledMessage(),
+        });
+        return;
+      }
 
       const subcommand = interaction.options.getSubcommand();
       const userId = interaction.user.id;

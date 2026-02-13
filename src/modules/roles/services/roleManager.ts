@@ -2,6 +2,7 @@ import { database } from '../../../database/client';
 import { RoleType } from '../../../types/database';
 import logger from '../../../core/logger';
 import { ROLE_DEFINITIONS, getAllRoleTypes } from '../types/roleDefinitions';
+import { roleSystemGuard } from '../utils/roleSystemGuard';
 
 export interface RoleAssignmentResult {
   success: boolean;
@@ -35,6 +36,14 @@ export class RoleManager {
     guildId: string,
     roleType: RoleType
   ): Promise<RoleAssignmentResult> {
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabled()) {
+      return {
+        success: false,
+        error: 'Role system is disabled',
+      };
+    }
+
     try {
       // Validate role type
       if (!getAllRoleTypes().includes(roleType)) {
@@ -84,6 +93,14 @@ export class RoleManager {
    * Relinquish user's current role
    */
   async relinquishRole(userId: string, guildId: string): Promise<RoleAssignmentResult> {
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabled()) {
+      return {
+        success: false,
+        error: 'Role system is disabled',
+      };
+    }
+
     try {
       const user = await database.users.findOne({ id: userId, guildId });
       if (!user) {

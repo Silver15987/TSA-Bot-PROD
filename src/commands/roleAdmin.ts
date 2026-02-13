@@ -10,6 +10,7 @@ import { roleActionLogger } from '../modules/roles/services/roleActionLogger';
 import { roleAbilityService } from '../modules/roles/services/roleAbilityService';
 import { formatRoleName, getRoleEmoji } from '../modules/roles/utils/formatters';
 import { RoleType } from '../types/database';
+import { roleSystemGuard } from '../modules/roles/utils/roleSystemGuard';
 
 export default {
   data: new SlashCommandBuilder()
@@ -116,6 +117,14 @@ export default {
       }
 
       await interaction.deferReply({ ephemeral: true });
+
+      // Check if role system is enabled
+      if (!roleSystemGuard.isEnabled()) {
+        await interaction.editReply({
+          content: roleSystemGuard.getDisabledMessage(),
+        });
+        return;
+      }
 
       const subcommand = interaction.options.getSubcommand();
       const guildId = interaction.guildId!;

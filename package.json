@@ -10,6 +10,7 @@
     "refresh-commands": "tsx scripts/refresh-commands.ts",
     "set-faction-category": "tsx scripts/set-faction-category.ts",
     "toggle-quests": "tsx scripts/toggle-quests.ts",
+    "toggle-roles": "tsx scripts/toggle-roles.ts",
     "fetch-user-factions": "tsx scripts/fetch-user-factions.ts",
     "migrate:vc-activity": "tsx scripts/migrate-add-vc-activity.ts",
     "migrate:faction-xp": "tsx scripts/migrate-faction-xp.ts",

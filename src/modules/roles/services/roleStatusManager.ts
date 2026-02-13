@@ -1,6 +1,7 @@
 import { database } from '../../../database/client';
 import { RoleType, RoleStatusDocument } from '../../../types/database';
 import logger from '../../../core/logger';
+import { roleSystemGuard } from '../utils/roleSystemGuard';
 
 export interface StatusData {
   guildId: string;
@@ -29,6 +30,11 @@ export class RoleStatusManager {
    * Apply a status effect
    */
   async applyStatus(data: StatusData): Promise<string | null> {
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabled()) {
+      return null;
+    }
+
     try {
       const statusId = this.generateStatusId();
       const statusDoc: RoleStatusDocument = {
@@ -161,6 +167,11 @@ export class RoleStatusManager {
    * Check and remove expired statuses
    */
   async checkExpiredStatuses(): Promise<number> {
+    // Early exit if role system disabled
+    if (!roleSystemGuard.isEnabled()) {
+      return 0;
+    }
+
     try {
       const now = new Date();
       const result = await database.roleStatuses.deleteMany({
