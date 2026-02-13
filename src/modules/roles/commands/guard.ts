@@ -42,17 +42,17 @@ export default {
     try {
       await interaction.deferReply({ ephemeral: true });
 
+      const userId = interaction.user.id;
+      const guildId = interaction.guildId!;
+      const subcommand = interaction.options.getSubcommand();
+
       // Check if role system is enabled
-      if (!roleSystemGuard.isEnabled()) {
+      if (!(await roleSystemGuard.isEnabled(guildId))) {
         await interaction.editReply({
           content: roleSystemGuard.getDisabledMessage(),
         });
         return;
       }
-
-      const userId = interaction.user.id;
-      const guildId = interaction.guildId!;
-      const subcommand = interaction.options.getSubcommand();
 
       // Verify user has Guard role
       const role = await roleManager.getUserRole(userId, guildId);

@@ -33,28 +33,11 @@ async function toggleRoles(guildId: string, enabled: boolean): Promise<void> {
       throw new Error(`Config not found for guild ${guildId}`);
     }
     
-    // Clear config cache to force reload
-    configManager.clearCache();
-    
-    // Clear roleSystemGuard cache
-    const { roleSystemGuard } = await import('../src/modules/roles/utils/roleSystemGuard');
-    roleSystemGuard.clearCache();
-    
     logger.info(`✅ Role system ${status} for guild ${guildId}`);
-    
-    // Verify the change
-    await configManager.loadConfig(guildId);
-    const config = configManager.getConfig(guildId);
-    const rolesEnabled = config.roles?.enabled !== false;
-    
-    if (rolesEnabled === enabled) {
-      logger.info(`✅ Verified: Role system is now ${rolesEnabled ? 'ENABLED' : 'DISABLED'}`);
-    } else {
-      logger.warn(`⚠️  Warning: Config shows roles.enabled = ${config.roles?.enabled}, expected ${enabled}`);
-    }
+    logger.info(`✅ Database updated successfully. The live bot will pick up this change within 60 seconds (cache TTL).`);
     
     if (!enabled) {
-      logger.info('⚠️  Note: Scheduler will skip on next run. Consider restarting bot for full effect.');
+      logger.info('⚠️  Note: Role system disabled. All role commands and scheduler will be inactive.');
     }
     
   } catch (error) {

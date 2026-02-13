@@ -56,16 +56,16 @@ export default {
     try {
       await interaction.deferReply({ ephemeral: true });
 
+      const userId = interaction.user.id;
+      const guildId = interaction.guildId!;
+
       // Check if role system is enabled
-      if (!roleSystemGuard.isEnabled()) {
+      if (!(await roleSystemGuard.isEnabled(guildId))) {
         await interaction.editReply({
           content: roleSystemGuard.getDisabledMessage(),
         });
         return;
       }
-
-      const userId = interaction.user.id;
-      const guildId = interaction.guildId!;
 
       // Verify user has Witch role
       const role = await roleManager.getUserRole(userId, guildId);
@@ -201,24 +201,7 @@ async function handleCurse(
   const durationHours = baseDurationHours + Math.floor(curseStrength / 1000); // Can exceed 12 hours with higher strength
   const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000);
 
-  // Apply instant loss immediately if curse type is instant_loss
-  if (curseType === 'instant_loss') {
-    if (targetUserId) {
-      // Deduct from user
-      await database.users.updateOne(
-        { id: targetUserId, guildId },
-        { $inc: { coins: -amount }, $set: { updatedAt: new Date() } }
-      );
-    } else if (targetFactionId) {
-      // Deduct from faction treasury
-      await database.factions.updateOne(
-        { id: targetFactionId, guildId },
-        { $inc: { treasury: -amount }, $set: { updatedAt: new Date() } }
-      );
-    }
-  }
-
-  // Apply curse status
+  // Apply curse status first
   const statusId = await roleStatusManager.applyStatus({
     guildId,
     userId,
@@ -237,10 +220,28 @@ async function handleCurse(
   });
 
   if (!statusId) {
+    logger.warn(`Failed to apply curse status for witch ${userId} in guild ${guildId} - role system may be disabled`);
     await interaction.editReply({
-      content: '❌ Failed to apply curse.',
+      content: '❌ Failed to apply curse. The role system may be disabled.',
     });
     return;
+  }
+
+  // Apply instant loss only after successful status application
+  if (curseType === 'instant_loss') {
+    if (targetUserId) {
+      // Deduct from user
+      await database.users.updateOne(
+        { id: targetUserId, guildId },
+        { $inc: { coins: -amount }, $set: { updatedAt: new Date() } }
+      );
+    } else if (targetFactionId) {
+      // Deduct from faction treasury
+      await database.factions.updateOne(
+        { id: targetFactionId, guildId },
+        { $inc: { treasury: -amount }, $set: { updatedAt: new Date() } }
+      );
+    }
   }
 
   // Deduct cost from witch
