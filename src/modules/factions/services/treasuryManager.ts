@@ -134,10 +134,16 @@ export class TreasuryManager {
         `User ${userId} deposited ${amount} coins to faction ${factionId}. New treasury: ${newTreasuryBalance}`
       );
 
-      // Update quest progress for treasury deposit quests
+      // Update quest progress for treasury deposit quests (only if enabled)
       try {
-        const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
-        await questProgressTracker.trackTreasuryContribution(userId, guildId, factionId, amount);
+        const { configManager } = await import('../../../core/configManager');
+        const config = configManager.getConfig(guildId);
+        const questsEnabled = config.quests?.enabled !== false;
+        
+        if (questsEnabled) {
+          const { questProgressTracker } = await import('../../quests/services/questProgressTracker');
+          await questProgressTracker.trackTreasuryContribution(userId, guildId, factionId, amount);
+        }
       } catch (error) {
         logger.error('Error tracking quest treasury contribution:', error);
       }
